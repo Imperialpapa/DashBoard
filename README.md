@@ -1,6 +1,6 @@
 # GitHub · Hugging Face · Hacker News · App Store 베스트
 
-기간별로 새로 만들어진 GitHub 공개 저장소를 스타순으로, Hugging Face 공개 모델을 좋아요순으로, Hacker News에 올라온 글을 점수순으로, 그리고 한국 App Store 인기 차트를 보여 주는 대시보드입니다. 화면 위쪽 탭으로 넷을 오갑니다. GitHub·Hugging Face·Hacker News는 주간·월간·연간 단위로 "최근 7일" 같은 이동 구간과 지난 주·달·해를 골라 보고, App Store는 무료·유료·최고 매출 차트를 카테고리별로 골라 봅니다.
+기간별로 새로 만들어진 GitHub 공개 저장소를 스타순으로, Hugging Face 공개 모델·Space·데이터셋을 좋아요순으로, Hacker News에 올라온 글을 점수순으로, 그리고 한국 App Store 인기 차트를 보여 주는 대시보드입니다. 화면 위쪽 탭으로 넷을 오갑니다. GitHub·Hugging Face·Hacker News는 주간·월간·연간 단위로 "최근 7일" 같은 이동 구간과 지난 주·달·해를 골라 보고, App Store는 무료·유료·최고 매출 차트를 카테고리별로 골라 봅니다.
 
 **보기: <https://imperialpapa.github.io/DashBoard/>**
 
@@ -37,13 +37,14 @@
 
 ### Hugging Face 탭
 
-Hugging Face API에는 "이 기간에 만들어진 것만" 거르는 조건이 없습니다. 그래서 모델 목록을 좋아요순으로 한 번 훑어 내려가며(한 번에 1,000개씩, 최대 60번), 각 모델을 만든 날짜가 속한 주·달·해에 나눠 담습니다. 목록이 좋아요순이므로 기간마다 먼저 담긴 100개가 그 기간의 상위 100개입니다.
+탭 안에서 **모델 · Spaces · 데이터셋**을 오갑니다. Hugging Face API에는 "이 기간에 만들어진 것만" 거르는 조건이 없습니다. 그래서 종류마다 목록을 좋아요순으로 한 번 훑어 내려가며(한 번에 1,000개씩, 최대 60번), 각 항목을 만든 날짜가 속한 주·달·해에 나눠 담습니다. 목록이 좋아요순이므로 기간마다 먼저 담긴 100개가 그 기간의 상위 100개입니다.
 
-- 한 번 훑으면 모든 기간이 함께 갱신됩니다. 20~30초쯤 걸리고 토큰 없이도 됩니다.
+- 한 번 훑으면 그 종류의 모든 기간이 함께 갱신됩니다. 종류마다 수십 초쯤 걸리고 토큰 없이도 됩니다. 세 종류가 같은 요청 한도(익명 5분에 500회)를 나눠 쓰므로 빌드에서는 동시에 받지 않고 차례로 받습니다.
 - 60번을 받고도 100개가 안 찬 기간(막 시작한 주 등)은 찬 만큼만 보여 주고, 좋아요 몇 개 이상까지 훑었는지를 함께 적습니다.
-- 2022년 3월 이전에 만든 모델은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.
-- 포크가 없어 스팸 의심 규칙은 적용하지 않습니다. 대신 작업 종류, 라이브러리, 최근 30일 다운로드 수를 보여 줍니다.
-- Hugging Face 수집이 실패해도 GitHub 순위는 그대로 배포되고, Hugging Face 탭은 지난번 순위를 실패 표시와 함께 보여 줍니다.
+- 2022년 3월 이전에 만든 것은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.
+- 포크가 없어 스팸 의심 규칙은 적용하지 않습니다. 대신 모델은 작업 종류·라이브러리·최근 30일 다운로드 수를, Space는 무엇으로 만들었는지(SDK: Gradio·Docker·Static 등)를, 데이터셋은 데이터의 형태(text·image·audio 등)와 다운로드 수를 보여 줍니다.
+- 한 종류의 수집이 실패해도 나머지는 그대로 배포되고, 실패한 종류는 지난번 순위를 실패 표시와 함께 보여 줍니다.
+- 다룰 종류는 `config.js`의 `hf.kinds`에서 고릅니다.
 
 ### Hacker News 탭
 
@@ -85,7 +86,7 @@ npm test         # 로직 시험(바깥 API를 부르지 않는다)
 | 환경 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `GITHUB_TOKEN` (또는 `GH_TOKEN`) | 없음 | 있으면 검색 한도가 분당 10회에서 30회로 늘어납니다. 권한(scope)은 필요 없습니다 |
-| `HF_TOKEN` | 없음 | Hugging Face 토큰. 없어도 됩니다(익명 한도 5분에 500회, 한 번 훑는 데 60회 이하) |
+| `HF_TOKEN` | 없음 | Hugging Face 토큰. 없어도 됩니다(익명 한도 5분에 500회, 세 종류를 훑는 데 180회 이하) |
 | `PORT`, `HOST` | `4173`, `127.0.0.1` | 로컬 서버 주소 |
 | `SEED_URL` | 없음 | 빌드가 수집 상태를 이어받을 배포본 주소(Actions가 넣어 줍니다) |
 | `BUDGET_SEC` | 540 | 빌드 한 번이 수집에 쓰는 시간 상한(초) |
@@ -99,7 +100,7 @@ npm test         # 로직 시험(바깥 API를 부르지 않는다)
 scripts/build.js             정적 사이트 빌드 실행
 lib/build.js                 빌드: 지난 배포본에서 상태 이어받기, 수집, 파일 쓰기
 lib/collector.js             GitHub 수집기: 우선순위, 한도 관리, 백오프
-lib/sources.js               GitHub 말고 덧붙는 출처 목록(hf, hn, as): 서버와 빌드가 이것으로 수집기를 만든다
+lib/sources.js               GitHub 말고 덧붙는 출처 목록(hf·hfs·hfd, hn, as): 서버와 빌드가 이것으로 수집기를 만든다
 lib/sweep.js                 한 번 훑어 모든 목록을 갱신하는 수집기의 공통 뼈대
 lib/hfcollector.js           Hugging Face 수집기: 좋아요순 목록을 훑어 기간에 나눠 담기
 lib/hncollector.js           Hacker News 수집기: 기간마다 점수순으로 검색
@@ -107,7 +108,7 @@ lib/ascollector.js           App Store 수집기: 차트 피드를 받고 평가
 lib/store.js                 순위 캐시, 증가·순위 변동 계산
 lib/periods.js               기간(버킷) 정의와 갱신 주기
 lib/github.js                GitHub 검색 API 호출
-lib/hf.js                    Hugging Face 모델 목록 API 호출
+lib/hf.js                    Hugging Face 목록 API 호출(모델, Space, 데이터셋)
 lib/hn.js                    Hacker News 검색 API 호출
 lib/appstore.js              App Store 차트 피드와 조회 API 호출
 lib/spam.js                  스팸 의심 판정

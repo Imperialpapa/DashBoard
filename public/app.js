@@ -14,7 +14,28 @@
   //   pool, order: 기간 설명에 쓰는 말("… 만들어진 공개 저장소 가운데 스타가 많은 순으로 …")
   //   plainName: 이름이 "주인/이름" 꼴이 아니다(제목이나 앱 이름이라 /로 나누지 않는다)
   //   pending: 서버 방식에서 아직 받는 중일 때의 안내 [제목, 본문]
+  //   tab, sub: 한 탭 안에 묶이는 출처들(tab이 같다)과, 그 탭 안에서 이 출처를 부르는 이름
   // GitHub·Hugging Face·Hacker News는 "그 기간에 새로 나온 것"의 순위이고, App Store는 애플이 낸 인기 차트 그대로다.
+
+  // Hugging Face는 한 탭 안에서 모델·Space·데이터셋을 오간다. 셋은 받는 방식과 화면이 같고 낱말만 다르다.
+  //   unitGa, unitEul: 조사를 붙인 꼴(모델이 / Space가)   facetOr: "작업 종류나 검색어를 바꿔 보세요"의 앞부분
+  const hugging = ({ dir, sub, unit, unitGa, unitEul, facet, facetOr, note }) => ({
+    name: 'Hugging Face', title: 'Hugging Face 베스트', tab: 'hf', sub, dir, types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+    bucket: '기간', unit, score: '좋아요', mark: '♥', facet, noFacet: `${facet} 표시 없음`, made: '생성',
+    pool: `만들어진 공개 ${unit}`, order: '좋아요가 많은 순',
+    rankSort: '좋아요순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
+    searchHint: `${unit} 이름으로 찾기`,
+    histHint: `순위에 든 ${unitGa} 언제 만들어졌는지 보여 줍니다.`,
+    none: `이 기간에 만들어진 ${unitEul} 아직 찾지 못했습니다`,
+    noMatch: [`조건에 맞는 ${unitGa} 없습니다`, `${facetOr} 검색어를 바꿔 보세요.`],
+    pending: ['이 기간의 순위를 받아 오는 중입니다', `Hugging Face ${unit} 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.`],
+    foot: [
+      `순위는 해당 기간(UTC 기준)에 새로 만들어진 Hugging Face 공개 ${unitEul} 좋아요 수로 줄 세운 상위 100개입니다. 기간 안에 만들어진 것만 다루므로 좋아요 수가 곧 그 기간에 받은 좋아요입니다. 좋아요가 아주 적은 것까지는 훑지 않아서, 막 시작한 기간은 100개가 안 될 수 있습니다.`,
+      `증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. ${note}`,
+      '2022년 3월 이전에 만든 것은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.',
+    ],
+  });
+
   const SOURCES = {
     gh: {
       name: 'GitHub', title: 'GitHub 베스트', dir: '', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
@@ -31,22 +52,18 @@
         '스타에 비해 포크가 거의 없는 저장소는 스타를 사들인 스팸으로 의심해 기본으로 숨기고, 그만큼 아래 순위를 더 받아 100개를 채웁니다. 숫자만 보는 어림 규칙이라 틀릴 수 있으니, 숨기기를 끄면 표시가 붙은 채로 모두 볼 수 있습니다.',
       ],
     },
-    hf: {
-      name: 'Hugging Face', title: 'Hugging Face 베스트', dir: 'hf/', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
-      bucket: '기간', unit: '모델', score: '좋아요', mark: '♥', facet: '작업', noFacet: '작업 표시 없음', made: '생성',
-      pool: '만들어진 공개 모델', order: '좋아요가 많은 순',
-      rankSort: '좋아요순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
-      searchHint: '모델 이름으로 찾기',
-      histHint: '순위에 든 모델이 언제 만들어졌는지 보여 줍니다.',
-      none: '이 기간에 만들어진 모델을 아직 찾지 못했습니다',
-      noMatch: ['조건에 맞는 모델이 없습니다', '작업 종류나 검색어를 바꿔 보세요.'],
-      pending: ['이 기간의 순위를 받아 오는 중입니다', 'Hugging Face 모델 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.'],
-      foot: [
-        '순위는 해당 기간(UTC 기준)에 새로 만들어진 Hugging Face 공개 모델을 좋아요 수로 줄 세운 상위 100개입니다. 기간 안에 만들어진 모델만 다루므로 좋아요 수가 곧 그 기간에 받은 좋아요입니다. 좋아요가 아주 적은 모델까지는 훑지 않아서, 막 시작한 기간은 100개가 안 될 수 있습니다.',
-        '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. 다운로드는 최근 30일 동안의 횟수입니다.',
-        '2022년 3월 이전에 만든 모델은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.',
-      ],
-    },
+    hf: hugging({
+      dir: 'hf/', sub: '모델', unit: '모델', unitGa: '모델이', unitEul: '모델을', facet: '작업', facetOr: '작업 종류나',
+      note: '다운로드는 최근 30일 동안의 횟수입니다.',
+    }),
+    hfs: hugging({
+      dir: 'hfs/', sub: 'Spaces', unit: 'Space', unitGa: 'Space가', unitEul: 'Space를', facet: 'SDK', facetOr: 'SDK나',
+      note: 'SDK는 그 Space를 무엇으로 만들었는지(Gradio, Docker, Static 등)입니다.',
+    }),
+    hfd: hugging({
+      dir: 'hfd/', sub: '데이터셋', unit: '데이터셋', unitGa: '데이터셋이', unitEul: '데이터셋을', facet: '형태', facetOr: '형태나',
+      note: '다운로드는 최근 30일 동안의 횟수이고, 형태는 데이터의 종류(text, image, audio 등)입니다.',
+    }),
     hn: {
       name: 'Hacker News', title: 'Hacker News 베스트', dir: 'hn/', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '글', score: '점수', scoreUnit: '점', mark: '▲', facet: '사이트', noFacet: '사이트 없음', made: '등록',
@@ -109,13 +126,13 @@
     langs: $('#langs'), hist: $('#hist'), status: $('#status'),
     refreshBtn: $('#refreshBtn'), refreshMsg: $('#refreshMsg'), tip: $('#tip'),
     spamLabel: $('#spamLabel'), spamToggle: $('#spamToggle'), spamCount: $('#spamCount'),
-    sources: $('#sources'), brandText: $('#brandText'), unitHead: $('#unitHead'), scoreHead: $('#scoreHead'),
+    sources: $('#sources'), subs: $('#subs'), brandText: $('#brandText'), unitHead: $('#unitHead'), scoreHead: $('#scoreHead'),
     facetLabel: $('#facetLabel'), facetTitle: $('#facetTitle'), facetHint: $('#facetHint'), histHint: $('#histHint'),
     histTitle: $('#histTitle'), ageField: $('#ageField'), age: $('#ageSelect'), foot: $('#foot'),
   };
 
   const state = {
-    src: 'gh', // 출처(탭): SOURCES의 이름(gh, hf, hn, as)
+    src: 'gh', // 출처: SOURCES의 이름(gh, hf, hfs, hfd, hn, as)
     type: 'weekly',
     key: 'rolling',
     sort: 'rank',
@@ -195,6 +212,9 @@
 
   const pace = (r, asOf) => r.stars / Math.max(1, (asOf - Date.parse(r.created)) / DAY);
   const S = () => SOURCES[state.src];
+  /** 그 출처가 속한 탭(위쪽 단추의 이름)과, 한 탭에 묶인 출처들. Hugging Face 탭에 hf·hfs·hfd가 묶인다. */
+  const tabOf = (src) => SOURCES[src].tab || src;
+  const family = (tab) => Object.keys(SOURCES).filter((src) => tabOf(src) === tab);
   const langOf = (r) => r.lang || S().noFacet;
   const idOf = (type, key, src = state.src) => `${src}:${type}/${key}`;
   const currentId = () => idOf(state.type, state.key);
@@ -471,14 +491,26 @@
 
   function renderNav() {
     // 출처 탭은 이 사이트에 그 출처의 순위가 있을 때만(또는 그 주소로 들어왔을 때만) 보인다.
+    const tab = tabOf(state.src);
     let shown = 0;
     for (const b of el.sources.querySelectorAll('button')) {
       const src = b.dataset.src;
-      b.hidden = !(src === 'gh' || src === state.src || metaOf(src));
+      b.hidden = !(src === 'gh' || src === tab || family(src).some((x) => metaOf(x)));
       if (!b.hidden) shown += 1;
-      b.setAttribute('aria-pressed', String(src === state.src));
+      b.setAttribute('aria-pressed', String(src === tab));
     }
     el.sources.hidden = shown < 2;
+    // 탭 안에서 오가는 단추(Hugging Face: 모델 | Spaces | 데이터셋). 볼 것이 둘 이상일 때만 보인다.
+    const subs = family(tab).filter((src) => src === state.src || metaOf(src));
+    const subSig = `${state.src}|${subs.join(',')}`;
+    if (el.subs.dataset.sig !== subSig) {
+      el.subs.dataset.sig = subSig;
+      el.subs.hidden = subs.length < 2;
+      el.subs.setAttribute('aria-label', `${S().name}에서 볼 것`);
+      el.subs.innerHTML = subs
+        .map((src) => `<button type="button" data-sub="${src}" aria-pressed="${src === state.src}">${esc(SOURCES[src].sub || SOURCES[src].name)}</button>`)
+        .join('');
+    }
     for (const b of el.types.querySelectorAll('button')) {
       b.setAttribute('aria-pressed', String(b.dataset.type === state.type));
     }
@@ -590,7 +622,7 @@
 
   function rowHtml(r, max, d) {
     const s = S();
-    const hf = state.src === 'hf';
+    const hf = s.tab === 'hf'; // 모델·Space·데이터셋
     const hn = state.src === 'hn';
     const as = state.src === 'as';
     // 저장소·모델은 "주인/이름"이고, 글 제목과 앱 이름에는 주인이 붙지 않는다(이름에 /가 들어 있어도 나누지 않는다).
@@ -611,8 +643,11 @@
       ? `<img class="avatar" src="${esc(avatar)}" alt="" width="36" height="36" loading="lazy" decoding="async">`
       : `<span class="avatar${letter ? ' avatar-txt' : ''}" aria-hidden="true">${esc(letter.toUpperCase())}</span>`;
     let extra;
-    if (hf) extra = `${r.lib ? `<span>${esc(r.lib)}</span>` : ''}<span data-tip="최근 30일 동안의 다운로드 횟수">다운로드 ${fmt(r.downloads || 0)}</span>`;
-    else if (hn) {
+    if (hf) {
+      // 다운로드 수는 모델과 데이터셋에만 있다(Space에는 없다).
+      const dl = r.downloads === undefined ? '' : `<span data-tip="최근 30일 동안의 다운로드 횟수">다운로드 ${fmt(r.downloads || 0)}</span>`;
+      extra = `${r.lib ? `<span>${esc(r.lib)}</span>` : ''}${dl}`;
+    } else if (hn) {
       const talk = r.hn && r.hn.startsWith('https://news.ycombinator.com/') ? r.hn : '#';
       extra =
         `${r.owner ? `<span>${esc(r.owner)}</span>` : ''}` +
@@ -1003,7 +1038,7 @@
       const left = c.rate.remaining === null || c.rate.remaining === undefined ? '' : ` 중 ${c.rate.remaining}회 남음`;
       if (c.running && c.progress) rows.push(['받는 중', `요청 ${c.progress.pages}번째`]);
       if (c.rate.limit) rows.push([`${S().name} 한도`, `${Math.round((c.rate.window || 300) / 60)}분에 ${c.rate.limit}회${left}`]);
-      if (state.src === 'hf') rows.push(['Hugging Face 인증', c.authenticated ? '토큰 사용' : '토큰 없음']);
+      if (S().tab === 'hf') rows.push(['Hugging Face 인증', c.authenticated ? '토큰 사용' : '토큰 없음']);
       rows.push([`받아 둔 ${S().bucket}`, `${c.eager - c.missing} / ${c.eager}`]);
     } else if (c) {
       const left = c.rate.remaining === null || c.rate.remaining === undefined ? '' : ` 중 ${c.rate.remaining}회 남음`;
@@ -1056,16 +1091,23 @@
     renderBoard();
   }
 
-  el.sources.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-src]');
-    if (!b || b.dataset.src === state.src) return;
-    // 보던 종류·기간이 저쪽에도 있으면 그대로 가고, 없으면 저쪽의 기본 화면으로 간다.
-    const to = b.dataset.src;
+  /** 다른 출처로 간다. 보던 종류·기간이 저쪽에도 있으면 그대로 가고, 없으면 저쪽의 기본 화면으로 간다. */
+  function switchTo(to) {
     const m = metaOf(to);
     const [homeType, homeKey] = SOURCES[to].home;
     const type = SOURCES[to].types.some(([t]) => t === state.type) ? state.type : homeType;
     const same = type === state.type && m && (m.types[type] || []).some((d) => d.key === state.key);
     go(type, same ? state.key : homeKey, to);
+  }
+  el.sources.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-src]');
+    if (!b || b.dataset.src === tabOf(state.src)) return;
+    // 그 탭에 묶인 출처 가운데 이 사이트에 순위가 있는 첫 번째 것으로 간다(Hugging Face면 모델).
+    switchTo(family(b.dataset.src).find((src) => metaOf(src)) || b.dataset.src);
+  });
+  el.subs.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-sub]');
+    if (b && b.dataset.sub !== state.src) switchTo(b.dataset.sub);
   });
   el.types.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-type]');

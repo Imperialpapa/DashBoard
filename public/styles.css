@@ -238,11 +238,22 @@ a {
   padding-block: 28px 22px;
 }
 
-/* 출처 탭(GitHub | Hugging Face): 그 아래 주간·월간·연간과 헷갈리지 않게 알약 모양으로 둔다 */
+/* 출처 탭과, 그 탭 안에서 오가는 단추(Hugging Face: 모델 | Spaces | 데이터셋)를 한 줄에 둔다 */
+.source-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-bottom: 8px;
+}
+
+.source-row:not(:has(> :not([hidden]))) {
+  display: none; /* 둘 다 숨었으면(출처가 GitHub 하나뿐) 자리도 차지하지 않는다 */
+}
+
+/* 출처 탭(GitHub | Hugging Face | …): 그 아래 주간·월간·연간과 헷갈리지 않게 알약 모양으로 둔다 */
 .sources {
   display: flex;
-  justify-self: start;
-  margin-bottom: 8px;
   padding: 3px;
   border: 1px solid var(--line-2);
   border-radius: 10px;
@@ -267,6 +278,33 @@ a {
 .sources button[aria-pressed="true"] {
   background: var(--ink);
   color: var(--surface);
+}
+
+/* 탭 안에서 오가는 단추: 출처 탭보다 가볍게, 고른 것만 테두리를 두른다 */
+.subs {
+  display: flex;
+  gap: 2px;
+}
+
+.subs button {
+  padding: 4px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.subs button:hover {
+  color: var(--ink);
+}
+
+.subs button[aria-pressed="true"] {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .types {
@@ -1066,7 +1104,7 @@ button.lang-row:hover {
 
   /* 출처 탭이 여럿이라 가로를 꽉 채워 나누고, 그래도 모자라면 줄을 바꾼다 */
   .sources {
-    justify-self: stretch;
+    flex: 1 1 100%;
     flex-wrap: wrap;
   }
 

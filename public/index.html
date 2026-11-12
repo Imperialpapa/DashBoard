@@ -38,11 +38,14 @@
 
   <main class="wrap">
     <section class="hero" aria-label="기간">
-      <div class="sources" id="sources" role="group" aria-label="출처" hidden>
-        <button type="button" data-src="gh" aria-pressed="true">GitHub</button>
-        <button type="button" data-src="hf" aria-pressed="false">Hugging Face</button>
-        <button type="button" data-src="hn" aria-pressed="false">Hacker News</button>
-        <button type="button" data-src="as" aria-pressed="false">App Store</button>
+      <div class="source-row">
+        <div class="sources" id="sources" role="group" aria-label="출처" hidden>
+          <button type="button" data-src="gh" aria-pressed="true">GitHub</button>
+          <button type="button" data-src="hf" aria-pressed="false">Hugging Face</button>
+          <button type="button" data-src="hn" aria-pressed="false">Hacker News</button>
+          <button type="button" data-src="as" aria-pressed="false">App Store</button>
+        </div>
+        <div class="subs" id="subs" role="group" hidden></div>
       </div>
       <div class="types" role="group" aria-label="집계 단위">
         <button type="button" data-type="weekly" aria-pressed="true">주간</button>

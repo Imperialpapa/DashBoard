@@ -14,7 +14,7 @@ const { Collector } = require(path.join(root, 'lib/collector'));
 const { GitHubError } = require(path.join(root, 'lib/github'));
 const fullCfg = require(path.join(root, 'config'));
 // 덧붙는 출처는 시험마다 필요한 것만 켠다(켜 두면 build()가 실제 API를 부른다). Hacker News는 15번에서 따로 켠다.
-const baseCfg = { ...fullCfg, hn: null };
+const baseCfg = { ...fullCfg, hn: null, hf: { ...fullCfg.hf, kinds: ['models'] } }; // Hugging Face는 모델만(Space·데이터셋은 16번에서)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -1086,6 +1086,115 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const chartN = JSON.parse(fs.readFileSync(path.join(out2, 'data/hn/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([chartN.version, chartN.total, chartN.items[0].gain, chartN.items[0].move, chartN.items[0].comments], [2, 48, 2, 0, 0]);
     ok('hacker news: 기간별 점수순, 끝난 기간은 가끔만 재확인, 증가, 일부·전체 실패, 한도 초과, 서버 주소, 빌드');
+  }
+
+  // 16) Hugging Face Space·데이터셋: 같은 수집기를 종류만 바꿔 쓰고, 빌드에서는 한도를 나눠 쓰므로 차례로 받는다
+  {
+    const { slimSpace, slimDataset, KINDS, HfError } = require(path.join(root, 'lib/hf'));
+    const sources = require(path.join(root, 'lib/sources'));
+    const { build } = require(path.join(root, 'lib/build'));
+    const today = periods.startOfDay(Date.now()).getTime();
+    const year = new Date(today).getUTCFullYear();
+
+    // 항목 다루기: 주소와 분류가 종류마다 다르다(Space는 SDK, 데이터셋은 첫 번째 형태).
+    assert.deepEqual(
+      slimSpace({ _id: 's1', id: 'org/demo', likes: 9, sdk: 'gradio', tags: ['gradio', 'region:us'], createdAt: '2026-01-01T00:00:00.000Z' }),
+      { id: 's1', name: 'org/demo', owner: 'org', avatar: '', url: 'https://huggingface.co/spaces/org/demo', desc: '', lang: 'gradio', stars: 9, created: '2026-01-01T00:00:00.000Z' },
+    );
+    assert.deepEqual(
+      slimDataset({ _id: 'd1', id: 'org/data', likes: 4, downloads: 12, tags: ['task_categories:text-generation', 'modality:text', 'modality:image', 'license:mit'], createdAt: '2026-01-01T00:00:00.000Z' }),
+      { id: 'd1', name: 'org/data', owner: 'org', avatar: '', url: 'https://huggingface.co/datasets/org/data', desc: '', lang: 'text', stars: 4, downloads: 12, license: 'mit', created: '2026-01-01T00:00:00.000Z' },
+    );
+    assert.deepEqual(Object.keys(KINDS), ['models', 'spaces', 'datasets']);
+
+    // 출처 목록: 설정의 kinds에 든 종류만 켜진다. 이름은 hf(모델), hfs(Space), hfd(데이터셋).
+    // 기간은 5개(최근 7일, 이번 주, 최근 30일, 이번 달, 올해)만 둔다.
+    const cfgK = (name, kinds) => ({
+      ...baseCfg, as: null, token: '', dataDir: path.join(TMP, name),
+      hf: { ...baseCfg.hf, token: '', kinds, listed: { weekly: 0, monthly: 0 }, firstYear: year, pageSize: 100, maxPages: 3 },
+    });
+    assert.deepEqual(Object.keys(sources.create(cfgK('kA', ['models', 'spaces', 'datasets']))), ['hf', 'hfs', 'hfd']);
+    assert.deepEqual(Object.keys(sources.create(cfgK('kB', ['datasets']))), ['hfd']);
+    assert.deepEqual(Object.keys(sources.create({ ...cfgK('kC', ['models']), hf: null })), []);
+    assert.deepEqual(Object.keys(sources.create(fullCfg)), ['hf', 'hfs', 'hfd', 'hn', 'as']); // 실제 설정에서는 모두 켜져 있다
+    assert.deepEqual([sources.validKey('hfs', 'weekly', 'rolling'), sources.validKey('hfd', 'weekly', '../x'), sources.validKey('nope', 'weekly', 'rolling')], [true, false, false]);
+
+    // 가짜 목록: 종류마다 오늘 만들어진 것 150개. 동시에 몇 건이 돌고 있는지도 센다.
+    const world = { calls: [], active: 0, peak: 0 };
+    const lister = (prefix) => async ({ kind, cursor, limit }) => {
+      world.calls.push(kind);
+      world.active += 1;
+      world.peak = Math.max(world.peak, world.active);
+      await sleep(5);
+      world.active -= 1;
+      const items = Array.from({ length: 150 }, (_, i) => ({ id: `${prefix}${i}`, name: `org/${prefix}-${i}`, owner: 'org', avatar: '', url: `https://huggingface.co/${prefix}/org/${prefix}-${i}`, desc: '', lang: 'x', stars: 500 - i, created: new Date(today + 3_600_000).toISOString() }));
+      const start = cursor ? Number(cursor) : 0;
+      return { items: items.slice(start, start + limit), next: start + limit < items.length ? String(start + limit) : null, rate: null };
+    };
+
+    // 수집기는 맡은 종류를 목록 함수에 넘기고, 종류마다 다른 폴더에 저장한다.
+    const one = sources.create(cfgK('kD', ['spaces']), { hfs: lister('spaces') }).hfs;
+    one.store.load();
+    const col = one.make();
+    assert.deepEqual([col.kind, col.label, one.group], ['spaces', 'Hugging Face Spaces', 'hf']);
+    const r = await col.run();
+    assert.deepEqual([r.pages, r.buckets, world.calls.join()], [1, 5, 'spaces']);
+    assert.ok(one.store.dir.endsWith(path.join('kD', 'hfs', 'cache')));
+    assert.equal(one.store.get('weekly', 'rolling').items[0].name, 'org/spaces-0');
+
+    // 서버: data/hfs/ 주소와 meta.hfs
+    const { createApp } = require(path.join(root, 'server'));
+    const gh = setup('hfsRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, extra: { hfs: { store: one.store, collector: col } } });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const liveMeta = await (await fetch(`${base}/data/meta.json`)).json();
+    assert.deepEqual([liveMeta.hfs.types.weekly[0].hasData, liveMeta.hf, liveMeta.hfd], [true, undefined, undefined]);
+    assert.equal((await (await fetch(`${base}/data/hfs/weekly.rolling.json`)).json()).items[0].name, 'org/spaces-0');
+    assert.equal((await fetch(`${base}/data/hfd/weekly.rolling.json`)).status, 404); // 켜지 않은 종류
+    close();
+    server.closeAllConnections();
+
+    // 빌드: 세 종류를 차례로(겹치지 않게) 받아 data/hf/, data/hfs/, data/hfd/에 쓴다.
+    const ghSearch = async () => ({ total: 1000, incomplete: false, items: page(100, 5000), rate: FAST });
+    const quiet = { log: () => {} };
+    const api = { hf: lister('models'), hfs: lister('spaces'), hfd: lister('datasets') };
+    const cfgB = { ...cfgK('buildK', ['models', 'spaces', 'datasets']), listed: { weekly: 0, monthly: 0 }, firstYear: year, static: { every: 15 * 60_000, budget: 5000 } };
+    world.calls = [];
+    world.peak = 0;
+    const out1 = path.join(TMP, 'siteK1');
+    const b1 = await build({ cfg: cfgB, out: out1, search: ghSearch, api, ...quiet });
+    assert.deepEqual([b1.written, b1.hf.written, b1.hfs.written, b1.hfd.written, b1.hn, b1.as], [5, 5, 5, 5, null, null]);
+    assert.deepEqual([world.calls.join(), world.peak], ['models,spaces,datasets', 1]);
+    for (const f of ['data/hf/weekly.rolling.json', 'data/hfs/weekly.rolling.json', 'data/hfd/state/monthly.rolling.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
+    const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([meta1.hf.types.weekly.length, meta1.hfs.types.weekly[0].hasData, meta1.hfd.types.yearly.length], [2, true, 1]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(out1, 'data/hfd/weekly.rolling.json'), 'utf8')).items[0].name, 'org/datasets-0');
+
+    // 다음 빌드는 종류마다 배포본에서 이어받는다. 한 종류가 실패해도 나머지는 그대로 낸다.
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    const down = async () => {
+      throw new HfError('boom', { status: 500 });
+    };
+    const out2 = path.join(TMP, 'siteK2');
+    const b2 = await build({ cfg: { ...cfgB, dataDir: path.join(TMP, 'buildK2') }, out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api: { ...api, hfs: down }, fetchImpl: served(out1), ...quiet });
+    assert.deepEqual([b2.hf.loaded, b2.hfs.loaded, b2.hfd.loaded], [5, 5, 5]);
+    assert.deepEqual([b2.hf.written, b2.hfs.written, b2.hfs.failed, b2.hfd.written, b2.hfd.failed], [5, 5, 1, 5, 0]); // Space는 지난 것을 다시 싣는다
+    const meta2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([meta2.hfs.types.weekly[0].error, meta2.hfd.types.weekly[0].error], ['boom', null]);
+    // 처음부터 실패한 종류는 목록에 싣지 않는다(화면에 그 단추가 나타나지 않는다).
+    const out3 = path.join(TMP, 'siteK3');
+    const b3 = await build({ cfg: { ...cfgB, dataDir: path.join(TMP, 'buildK3') }, out: out3, search: ghSearch, api: { ...api, hfd: down }, ...quiet });
+    const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([b3.hfs.written, b3.hfd.written, Boolean(meta3.hfs), meta3.hfd], [5, 0, true, undefined]);
+    console.warn = warn;
+    ok('hugging face space·데이터셋: 항목 모양, 켜고 끄기, 종류별 저장, 서버 주소, 차례로 받기, 이어받기, 일부 실패');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

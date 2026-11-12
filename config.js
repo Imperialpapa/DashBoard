@@ -45,11 +45,13 @@ module.exports = {
 
   manualRefreshCooldown: 30_000,
 
-  // Hugging Face 탭(lib/hf.js, lib/hfcollector.js): 모델을 좋아요순으로 훑어 만든 날짜로 기간에 나눠 담는다.
+  // Hugging Face 탭(lib/hf.js, lib/hfcollector.js): 목록을 좋아요순으로 훑어 만든 날짜로 기간에 나눠 담는다.
   // 이 항목을 지우면(null) Hugging Face 탭 없이 돈다.
   hf: {
-    token: process.env.HF_TOKEN || '', // 없어도 된다(익명 한도: 5분에 500회, 한 번 훑는 데 60회 이하)
-    // 2022년 3월 이전에 만든 모델은 만든 날짜가 모두 같은 날로 기록돼 있어, 2022년까지는 기간을 나눌 수 없다.
+    // 무엇을 다룰지: models(모델), spaces(Space), datasets(데이터셋). 종류마다 따로 한 번씩 훑는다.
+    kinds: ['models', 'spaces', 'datasets'],
+    token: process.env.HF_TOKEN || '', // 없어도 된다(익명 한도: 5분에 500회, 한 종류를 훑는 데 60회 이하)
+    // 2022년 3월 이전에 만든 것은 만든 날짜가 모두 같은 날로 기록돼 있어, 2022년까지는 기간을 나눌 수 없다.
     firstYear: 2023,
     listed: { weekly: 26, monthly: 36 }, // 기간 목록에 노출할 과거 구간 수(모두 미리 받는다)
     pageSize: 1000, // 한 번에 받는 개수(API 최대값)
