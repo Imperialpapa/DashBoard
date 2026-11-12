@@ -250,9 +250,20 @@
     if (state.live && st && st.version > data.version) loadChart({ live: true });
   }
 
-  /** 정적 사이트: 새로 만들어진 판이 있는지 확인하고, 보고 있는 기간이 바뀌었으면 다시 받는다. */
+  /**
+   * 정적 사이트: 새로 만들어진 판이 있는지 확인하고, 보고 있는 기간이 바뀌었으면 다시 받는다.
+   * 다음 수집 예정 시각이 지나기 전에는 새 판이 있을 리 없으므로 아예 묻지 않고,
+   * 지난 뒤에도(예약 실행은 늦어질 수 있다) POLL_GAP에 한 번만 묻는다.
+   */
+  const POLL_GAP = 10 * 60_000;
+  let polledAt = 0;
+  const nextAt = (m) => m.nextAt || m.builtAt + m.every;
   async function poll() {
     if (document.hidden) return;
+    const cur = state.meta;
+    if (cur && Date.now() < nextAt(cur)) return;
+    if (Date.now() - polledAt < POLL_GAP) return;
+    polledAt = Date.now();
     let meta;
     try {
       meta = await fetchMeta();
@@ -689,7 +700,7 @@
   }
 
   // ── 그리기: 상태 ─────────────────────────────────────────────
-  /** 정적 사이트가 만들어지는 간격: "약 15분" */
+  /** 정적 사이트가 만들어지는 간격: "약 12시간" */
   function everText() {
     const ms = (state.meta && state.meta.every) || 0;
     return ms >= 3_600_000 ? `약 ${Math.round(ms / 3_600_000)}시간` : `약 ${Math.max(1, Math.round(ms / 60_000))}분`;
@@ -721,7 +732,7 @@
     const rows = [['마지막 수집', rel(m.builtAt)]];
     rows.push(['이 기간 확인', st && st.fetchedAt ? rel(st.fetchedAt) : '아직 없음']);
     if (st && st.dataAt) rows.push(['순위가 바뀐 때', rel(st.dataAt)]);
-    rows.push(['다음 수집', until(m.builtAt + m.every)]);
+    rows.push(['다음 수집', until(nextAt(m))]);
     rows.push(['수집 방식', `GitHub Actions, ${everText()}마다`]);
     let have = 0;
     let all = 0;
@@ -949,8 +960,8 @@
         if (state.live) {
           connect();
         } else {
-          setInterval(poll, 60_000);
-          document.addEventListener('visibilitychange', poll); // 탭으로 돌아오면 바로 확인한다
+          setInterval(poll, POLL_GAP);
+          document.addEventListener('visibilitychange', poll); // 탭으로 돌아왔을 때도 (때가 됐으면) 확인한다
         }
       },
       () => {

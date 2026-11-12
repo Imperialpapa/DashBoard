@@ -480,6 +480,17 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(meta1.live, false);
     assert.equal(meta1.every, 15 * 60_000);
     assert.ok(Math.abs(meta1.builtAt - Date.now()) < 5000);
+    assert.equal(meta1.nextAt, meta1.builtAt + 15 * 60_000); // 예약 시각을 모르면 간격만큼 뒤
+
+    // 다음 예약 실행 시각: UTC 0:07과 12:07(한국 시간 9시·21시 무렵)
+    const { nextRun } = require(path.join(root, 'lib/build'));
+    const sched = { every: 12 * 3_600_000, at: { hours: [0, 12], minute: 7 } };
+    const next = (iso) => new Date(nextRun(Date.parse(iso), sched)).toISOString();
+    assert.equal(next('2026-11-12T00:06:59Z'), '2026-11-12T00:07:00.000Z');
+    assert.equal(next('2026-11-12T00:07:00Z'), '2026-11-12T12:07:00.000Z'); // 정각에 끝났으면 그다음 회차
+    assert.equal(next('2026-11-12T05:30:00Z'), '2026-11-12T12:07:00.000Z'); // 푸시로 중간에 빌드해도 다음 예약 시각
+    assert.equal(next('2026-12-31T12:07:01Z'), '2027-01-01T00:07:00.000Z');
+    assert.deepEqual(require(path.join(root, 'config')).static.at, sched.at); // 워크플로 cron '7 0,12 * * *'과 같아야 한다
     assert.ok(periods.TYPES.every((t) => meta1.types[t].every((b) => b.hasData && b.version === 1)));
     const chart1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([chart1.version, chart1.items.length, chart1.items[0].gain], [1, 100, null]);

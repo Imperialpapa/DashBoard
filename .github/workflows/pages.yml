@@ -4,9 +4,10 @@ name: Collect and deploy
 
 on:
   schedule:
-    # 약 15분마다(UTC). 간격을 바꾸면 config.js의 static.every도 맞춘다.
-    # GitHub의 예약 실행은 붐빌 때 늦어지거나 건너뛸 수 있다.
-    - cron: '3,18,33,48 * * * *'
+    # 하루 두 번: 한국 시간 9시와 21시 무렵(cron은 UTC라서 0시·12시).
+    # GitHub의 예약 실행은 매시 정각에 가장 붐벼 늦어지거나 건너뛸 수 있어 몇 분 비켜 둔다.
+    # 시각을 바꾸면 config.js의 static.every와 static.at도 맞춘다.
+    - cron: '7 0,12 * * *'
   push:
     branches: [main]
   workflow_dispatch:

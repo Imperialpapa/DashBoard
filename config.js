@@ -46,7 +46,9 @@ module.exports = {
   manualRefreshCooldown: 30_000,
 
   // 정적 사이트 빌드(lib/build.js, GitHub Actions + Pages)용.
-  //   every : 빌드가 도는 간격. 화면에 "약 N분마다"로 표시된다(.github/workflows/pages.yml의 cron과 맞춘다).
+  //   every : 빌드가 도는 간격(하루 두 번). 화면에 "약 12시간마다"로 표시된다.
+  //   at    : 예약 실행 시각(UTC). 한국 시간 9시·21시 = UTC 0시·12시. 화면은 이 시각이 지난 뒤에야 새 판을 확인한다.
   //   budget: 한 번의 빌드가 수집에 쓰는 시간 상한. 못 받은 기간은 다음 빌드에서 이어 받는다.
-  static: { every: 15 * MIN, budget: 9 * MIN },
+  // every와 at은 .github/workflows/pages.yml의 cron과 맞춘다.
+  static: { every: 12 * HOUR, at: { hours: [0, 12], minute: 7 }, budget: 9 * MIN },
 };
