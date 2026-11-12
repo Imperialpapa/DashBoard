@@ -470,8 +470,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     let extra = 0;
     const search = async () => ({ total: 1000, incomplete: false, items: page(100, 5000).map((x) => ({ ...x, stars: x.stars + extra })), rate: FAST });
     const quiet = { log: () => {} };
-    // hf: null → Hugging Face 없이 GitHub 쪽만 본다(Hugging Face는 12번에서 따로).
-    const cfgA = { ...baseCfg, hf: null, token: '', dataDir: path.join(TMP, 'buildA'), listed: { weekly: 2, monthly: 2 }, firstYear: new Date().getUTCFullYear() - 1, static: { every: 15 * 60_000, budget: 60_000 } };
+    // hf, as: null → GitHub 쪽만 본다(Hugging Face는 12·13번, App Store는 14번에서 따로).
+    const cfgA = { ...baseCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, 'buildA'), listed: { weekly: 2, monthly: 2 }, firstYear: new Date().getUTCFullYear() - 1, static: { every: 15 * 60_000, budget: 60_000 } };
     const out1 = path.join(TMP, 'site1');
     const r1 = await build({ cfg: cfgA, out: out1, search, ...quiet });
     // 주간 4(최근 7일·이번 주·지난 2주) + 월간 4 + 연간 3(최근 365일·올해·작년)
@@ -672,7 +672,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const quiet = { log: () => {} };
     const year = new Date(today).getUTCFullYear();
     const cfgH = {
-      ...baseCfg, token: '', dataDir: path.join(TMP, 'buildH'), listed: { weekly: 0, monthly: 0 }, firstYear: year,
+      ...baseCfg, as: null, token: '', dataDir: path.join(TMP, 'buildH'), listed: { weekly: 0, monthly: 0 }, firstYear: year,
       static: { every: 15 * 60_000, budget: 2000 },
       hf: { ...baseCfg.hf, token: '', listed: { weekly: 0, monthly: 0 }, firstYear: year },
     };
@@ -731,6 +731,188 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(JSON.parse(fs.readFileSync(path.join(out4, 'data/meta.json'), 'utf8')).hf, undefined);
     console.warn = warn;
     ok('build + hugging face: data/hf/ 파일, 배포본에서 이어받기, 실패해도 GitHub 순위는 낸다');
+  }
+
+  // 14) App Store: 차트 순위를 그대로 싣고, 평가 수는 묶어서 조회한다
+  {
+    const { AsCollector, storeConfig } = require(path.join(root, 'lib/ascollector'));
+    const { AppStoreError, slim } = require(path.join(root, 'lib/appstore'));
+    const { build } = require(path.join(root, 'lib/build'));
+
+    // 피드 항목 다루기: 가장 큰 아이콘, 앱 페이지 주소, 유료일 때만 가격, 출시일은 UTC로
+    const entry = {
+      'im:name': { label: '디노몬' },
+      'im:image': [{ label: 'https://x.test/53.png' }, { label: 'https://x.test/100.png' }],
+      'im:price': { label: '￦400', attributes: { amount: '400', currency: 'KRW' } },
+      link: [{ attributes: { rel: 'alternate', href: 'https://apps.apple.com/kr/app/x/id1?uo=2' } }, { attributes: { rel: 'enclosure', href: 'https://x.test/preview.png' } }],
+      id: { label: 'https://apps.apple.com/kr/app/x/id1?uo=2', attributes: { 'im:id': '1' } },
+      'im:artist': { label: 'SOTHAM KIM' },
+      category: { attributes: { 'im:id': '6014', label: '게임' } },
+      'im:releaseDate': { label: '2026-10-29T00:00:00-07:00' },
+    };
+    assert.deepEqual(slim(entry), { id: '1', name: '디노몬', owner: 'SOTHAM KIM', avatar: 'https://x.test/100.png', url: 'https://apps.apple.com/kr/app/x/id1?uo=2', desc: '', lang: '게임', price: '￦400', created: '2026-10-29T07:00:00.000Z' });
+    const freeApp = slim({ ...entry, 'im:price': { label: '무료', attributes: { amount: '0' } }, link: { attributes: { rel: 'alternate', href: 'javascript:alert(1)' } }, 'im:image': undefined });
+    assert.deepEqual([freeApp.price, freeApp.url, freeApp.avatar], ['', '', '']); // https가 아닌 주소는 버린다
+
+    // 가짜 스토어: 차트 6개(종류 3 × 종합·게임)가 서로 겹치는 앱 270개를 담고 있다.
+    const app = (n) => ({ id: String(n), name: `App ${n}`, owner: `Dev ${n % 7}`, avatar: '', url: `https://apps.apple.com/kr/app/x/id${n}`, desc: '', lang: n % 2 ? '게임' : '금융', price: '', created: '2026-01-01T00:00:00.000Z' });
+    const world = { shuffled: false, bump: 0, failing: new Set(), lookupStatus: 0, feeds: 0, lookups: [] };
+    const fetchChart = async ({ country, kind, genre, limit }) => {
+      world.feeds += 1;
+      assert.equal(country, 'kr');
+      if (world.failing.has(`${kind}/${genre}`) || world.failing.has('*')) throw new AppStoreError('HTTP 503', { status: 503 });
+      const base = { free: 0, paid: 1000, grossing: 50 }[kind] + (genre === 'all' ? 0 : 10);
+      const ids = Array.from({ length: limit }, (_, i) => base + i);
+      if (world.shuffled) {
+        [ids[0], ids[1]] = [ids[1], ids[0]]; // 1·2위가 자리를 바꾸고
+        ids[limit - 1] = base + 5000; // 100위에 새 앱이 들어온다
+      }
+      return ids.map(app);
+    };
+    const lookup = async ({ ids }) => {
+      world.lookups.push(ids.length);
+      if (world.lookupStatus) throw new AppStoreError(`HTTP ${world.lookupStatus}`, { status: world.lookupStatus });
+      // 끝자리가 9인 앱은 조회되지 않는다(스토어에서 내려간 앱 등).
+      return ids.filter((id) => Number(id) % 10 !== 9).map((id) => ({ id, stars: Number(id) * 2 + world.bump, rating: 4.5 }));
+    };
+    const asCfg = (name, over = {}) => ({
+      ...baseCfg, hf: null, token: '', dataDir: path.join(TMP, name),
+      as: { ...baseCfg.as, genres: [['all', '종합'], ['6014', '게임']], concurrency: 2, lookupBatch: 150, lookupSpacing: 0, ...over },
+    });
+    const asSetup = (name) => {
+      const cfg = asCfg(name);
+      const store = new Store(storeConfig(cfg));
+      store.load();
+      return { cfg, store, collector: new AsCollector({ cfg, store, fetchChart, lookup }) };
+    };
+
+    const a = asSetup('asA');
+    const meta0 = a.collector.meta();
+    assert.deepEqual(Object.keys(meta0.types), ['free', 'paid', 'grossing']);
+    assert.deepEqual(meta0.types.paid.map((b) => `${b.key}:${b.label}:${b.kind}:${b.hasData}`), ['all:종합:chart:false', '6014:게임:chart:false']);
+    assert.equal(meta0.country, 'kr');
+
+    const r1 = await a.collector.run();
+    // 피드 6번 + 조회 2번(고유 앱 270개를 150개씩). 조회되지 않은 앱은 차트마다 10개씩.
+    assert.deepEqual([r1.pages, r1.buckets, r1.failed, r1.apps, r1.unrated, world.feeds], [8, 6, 0, 270, 60, 6]);
+    assert.deepEqual(world.lookups, [150, 120]);
+    const free = a.store.get('free', 'all');
+    assert.equal(free.items.length, 100);
+    // 평가 수가 적은 앱이 위에 있어도 차트 순서 그대로다.
+    assert.deepEqual(free.items.slice(0, 3).map((x) => [x.rank, x.id, x.stars, x.rating]), [[1, '0', 0, 4.5], [2, '1', 2, 4.5], [3, '2', 4, 4.5]]);
+    assert.deepEqual([free.items[9].id, free.items[9].stars, free.items[9].rating], ['9', 0, null]); // 조회되지 않은 앱
+    assert.deepEqual([free.items[0].spam, free.items[0].crank, free.total], [false, 1, null]);
+    assert.equal(a.store.get('paid', '6014').items[0].id, '1010');
+    assert.ok(a.store.dir.endsWith(path.join('asA', 'as', 'cache')));
+
+    // 다시 받으면 순위 변동, 새로 진입한 앱, 평가 증가가 나온다.
+    for (const b of a.store.buckets.values()) for (const p of b.history) p.t -= 3_600_000;
+    world.shuffled = true;
+    world.bump = 5;
+    const r2 = await a.collector.run();
+    assert.equal(r2.changed.size, 6);
+    const free2 = a.store.get('free', 'all');
+    assert.deepEqual(free2.items.slice(0, 2).map((x) => [x.id, x.rank, x.move, x.gain]), [['1', 1, 1, 5], ['0', 2, -1, 5]]);
+    assert.deepEqual([free2.items[99].id, free2.items[99].move, free2.items[99].gain], ['5000', 'new', null]);
+
+    // 평가 수 조회가 한도에 걸리면 더 부르지 않고 지난번 값을 이어 쓴다(평가가 0으로 떨어져 보이지 않게). 순위는 새로 싣는다.
+    const warn = console.warn;
+    console.warn = () => {};
+    world.lookups = [];
+    world.lookupStatus = 403;
+    world.shuffled = false;
+    const r3 = await a.collector.run();
+    assert.deepEqual([world.lookups.length, r3.failed], [1, 0]);
+    const free3 = a.store.get('free', 'all');
+    assert.deepEqual([free3.items[0].id, free3.items[0].stars, free3.items[0].gain, free3.items[1].stars], ['0', 5, 5, 7]);
+    // 한도가 아닌 오류라도 세 번 잇달아 실패하면 그만둔다(응답 없는 서버를 끝까지 기다리지 않는다).
+    world.lookups = [];
+    world.lookupStatus = 500;
+    a.cfg.as.lookupBatch = 30; // 270개 → 9묶음
+    const r3b = await a.collector.run();
+    assert.deepEqual([world.lookups.length, r3b.failed, a.store.get('free', 'all').items[1].stars], [3, 0, 7]);
+    a.cfg.as.lookupBatch = 150;
+    world.lookupStatus = 0;
+
+    // 차트 하나만 실패하면 그 차트만 이전 것을 두고 표시를 남긴다.
+    world.failing.add('paid/6014');
+    const before = a.store.get('paid', '6014').version;
+    const r4 = await a.collector.run();
+    assert.equal(r4.failed, 1);
+    assert.equal(a.store.get('paid', '6014').version, before);
+    assert.equal(a.collector.bucketStatus(a.collector.find('paid', '6014')).error, 'HTTP 503');
+    assert.equal(a.collector.bucketStatus(a.collector.find('paid', 'all')).error, null);
+    world.failing.clear();
+    await a.collector.run();
+    assert.equal(a.collector.bucketStatus(a.collector.find('paid', '6014')).error, null);
+
+    // 전부 실패하면 아무것도 바꾸지 않는다.
+    world.failing.add('*');
+    const versions = () => [...a.store.buckets.values()].map((b) => b.version).join(',');
+    const v0 = versions();
+    assert.equal(await a.collector.run(), null);
+    assert.equal(versions(), v0);
+    assert.equal(a.collector.bucketStatus(a.collector.find('free', 'all')).error, 'HTTP 503');
+
+    // 차트가 많아도 잇달아 8번 실패하면 남은 것은 보내지 않는다.
+    const many = asCfg('asMany', { genres: Array.from({ length: 12 }, (_, i) => [String(7000 + i), `분류 ${i}`]) });
+    const manyStore = new Store(storeConfig(many));
+    manyStore.load();
+    world.feeds = 0;
+    assert.equal(await new AsCollector({ cfg: many, store: manyStore, fetchChart, lookup }).run(), null);
+    assert.ok(world.feeds >= 8 && world.feeds <= 9, `피드 요청 ${world.feeds}번`);
+    world.failing.clear();
+    console.warn = warn;
+
+    // 서버: data/as/ 주소와 meta.as
+    const { createApp } = require(path.join(root, 'server'));
+    const gh = setup('asRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, as: { store: a.store, collector: a.collector } });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const meta = await (await fetch(`${base}/data/meta.json`)).json();
+    assert.deepEqual([meta.as.country, meta.as.types.grossing[1].label, meta.as.types.free[0].hasData, meta.hf], ['kr', '게임', true, undefined]);
+    let res = await fetch(`${base}/data/as/free.all.json`);
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).items[0].name, 'App 0');
+    assert.equal((await fetch(`${base}/data/as/free.9999.json`)).status, 404); // 받지 않는 카테고리
+    assert.equal((await fetch(`${base}/data/as/weekly.rolling.json`)).status, 404);
+    assert.equal((await fetch(`${base}/data/free.all.json`)).status, 404); // GitHub 쪽에는 없는 종류
+    assert.equal((await fetch(`${base}/api/refresh?src=as&type=free&key=all`, { method: 'POST' })).status, 429);
+    close();
+    server.closeAllConnections();
+
+    // 빌드: data/as/ 아래에 쓰고, 다음 빌드가 배포본에서 이어받는다.
+    const year = new Date().getUTCFullYear();
+    const search = async () => ({ total: 1000, incomplete: false, items: page(100, 5000), rate: FAST });
+    const quiet = { log: () => {} };
+    const cfgS = { ...asCfg('buildS'), listed: { weekly: 0, monthly: 0 }, firstYear: year, static: { every: 15 * 60_000, budget: 5000 } };
+    world.bump = 0;
+    const out1 = path.join(TMP, 'siteS1');
+    const b1 = await build({ cfg: cfgS, out: out1, search, asApi: { fetchChart, lookup }, ...quiet });
+    assert.deepEqual([b1.written, b1.hf, b1.as.written, b1.as.loaded, b1.as.ran, b1.as.failed], [5, null, 6, 0, 8, 0]);
+    for (const f of ['data/as/free.all.json', 'data/as/grossing.6014.json', 'data/as/state/paid.all.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
+    const metaS = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([metaS.as.country, metaS.as.types.free.length, metaS.as.types.free[1].version, metaS.hf], ['kr', 2, 1, undefined]);
+    for (const name of fs.readdirSync(path.join(out1, 'data/as/state'))) {
+      const f = path.join(out1, 'data/as/state', name);
+      const st = JSON.parse(fs.readFileSync(f, 'utf8'));
+      st.fetchedAt -= 3_600_000;
+      for (const p of st.history) p.t -= 3_600_000;
+      fs.writeFileSync(f, JSON.stringify(st));
+    }
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    world.bump = 3;
+    const out2 = path.join(TMP, 'siteS2');
+    const b2 = await build({ cfg: { ...cfgS, dataDir: path.join(TMP, 'buildS2') }, out: out2, seedUrl: 'https://example.test/site/', search, asApi: { fetchChart, lookup }, fetchImpl: served(out1), ...quiet });
+    assert.deepEqual([b2.as.loaded, b2.as.written], [6, 6]);
+    const chartS = JSON.parse(fs.readFileSync(path.join(out2, 'data/as/free.all.json'), 'utf8'));
+    assert.deepEqual([chartS.version, chartS.items[1].gain, chartS.items[1].move, chartS.from], [2, 3, 0, undefined]);
+    ok('app store: 차트 순서, 순위 변동·신규·평가 증가, 조회 실패 시 이어 쓰기, 일부 실패, 서버 주소, 빌드');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

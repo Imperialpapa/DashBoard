@@ -719,6 +719,15 @@ a {
   background: var(--star);
 }
 
+/* 막대 대신 별점을 적는 출처(App Store) */
+.rating {
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .stars-val {
   min-width: 7ch;
   text-align: right;

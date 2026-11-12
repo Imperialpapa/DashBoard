@@ -41,6 +41,7 @@
       <div class="sources" id="sources" role="group" aria-label="출처" hidden>
         <button type="button" data-src="gh" aria-pressed="true">GitHub</button>
         <button type="button" data-src="hf" aria-pressed="false">Hugging Face</button>
+        <button type="button" data-src="as" aria-pressed="false">App Store</button>
       </div>
       <div class="types" role="group" aria-label="집계 단위">
         <button type="button" data-type="weekly" aria-pressed="true">주간</button>
@@ -71,6 +72,15 @@
         <span class="field-label" id="facetLabel">언어</span>
         <select id="langSelect"><option value="">전체</option></select>
       </label>
+      <label class="field" id="ageField" hidden>
+        <span class="field-label">출시</span>
+        <select id="ageSelect">
+          <option value="">전체</option>
+          <option value="7">최근 7일</option>
+          <option value="30">최근 30일</option>
+          <option value="365">최근 1년</option>
+        </select>
+      </label>
       <label class="field field-grow">
         <span class="sr-only">검색</span>
         <input id="search" type="search" placeholder="저장소 이름이나 설명으로 찾기" autocomplete="off">
@@ -100,7 +110,7 @@
           <div class="langs" id="langs"></div>
         </section>
         <section class="panel">
-          <h2>만들어진 시점</h2>
+          <h2 id="histTitle">만들어진 시점</h2>
           <p class="hint" id="histHint">순위에 든 저장소가 언제 만들어졌는지 보여 줍니다.</p>
           <div class="hist" id="hist"></div>
         </section>

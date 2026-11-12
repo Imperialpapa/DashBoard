@@ -2,7 +2,7 @@
   "name": "github-best-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "GitHub 저장소·Hugging Face 모델의 주간·월간·연간 베스트 대시보드 (GitHub Actions 수집 + GitHub Pages, 또는 로컬 서버)",
+  "description": "GitHub 저장소·Hugging Face 모델의 주간·월간·연간 베스트와 App Store 인기 차트 대시보드 (GitHub Actions 수집 + GitHub Pages, 또는 로컬 서버)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

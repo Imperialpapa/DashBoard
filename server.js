@@ -10,8 +10,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const periods = require('./lib/periods');
-
 const PUBLIC = path.join(__dirname, 'public');
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -20,18 +18,21 @@ const STATIC = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
 };
-const CHART_PATH = new RegExp(`^/data/(hf/)?(${periods.TYPES.join('|')})\\.([\\w-]+)\\.json$`);
+// data/<종류>.<키>.json (GitHub), data/hf/…, data/as/… 종류와 키가 실제로 있는지는 수집기가 판단한다.
+const CHART_PATH = /^\/data\/(?:(hf|as)\/)?([a-z]+)\.([\w-]+)\.json$/;
 
 /**
  * HTTP 서버를 만든다(아직 듣지는 않는다).
  * @param {object} o
  * @param {object} o.store, o.collector GitHub 쪽 저장소와 수집기
  * @param {{store: object, collector: object}} [o.hf] Hugging Face 쪽(없으면 그 탭 없이 돈다)
+ * @param {{store: object, collector: object}} [o.as] App Store 쪽(없으면 그 탭 없이 돈다)
  */
-function createApp({ store, collector, hf = null }) {
-  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh', Hugging Face를 'hf'로 부른다.
+function createApp({ store, collector, hf = null, as = null }) {
+  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh', Hugging Face를 'hf', App Store를 'as'로 부른다.
   const sources = { gh: { store, collector } };
   if (hf) sources.hf = hf;
+  if (as) sources.as = as;
 
   // ── 실시간 푸시(SSE) ─────────────────────────────────────────────
   const clients = new Set();
@@ -42,7 +43,12 @@ function createApp({ store, collector, hf = null }) {
     for (const res of clients) res.write(frame);
   }
 
-  const meta = () => ({ ...collector.meta(), live: true, ...(hf ? { hf: hf.collector.meta() } : {}) });
+  // GitHub 것은 바로 아래에, 나머지 출처는 그 이름 아래에 싣는다(정적 사이트의 meta.json과 같은 모양).
+  const meta = () => {
+    const m = { ...collector.meta(), live: true };
+    for (const [src, s] of Object.entries(sources)) if (src !== 'gh') m[src] = s.collector.meta();
+    return m;
+  };
 
   for (const [src, s] of Object.entries(sources)) {
     s.collector.on('bucket', (status, changed) => push('bucket', { ...status, changed, src }));
@@ -175,7 +181,7 @@ function createApp({ store, collector, hf = null }) {
       if (pathname === '/data/meta.json') return sendJson(req, res, 200, meta());
       const chart = CHART_PATH.exec(pathname);
       if (chart) {
-        const source = sources[chart[1] ? 'hf' : 'gh'];
+        const source = sources[chart[1] || 'gh'];
         if (!source) return sendJson(req, res, 404, { error: 'not found' });
         return sendChart(req, res, source, chart[2], chart[3]);
       }
@@ -219,7 +225,14 @@ function main() {
     hfStore.load();
     hf = { store: hfStore, collector: new HfCollector({ cfg, store: hfStore }) };
   }
-  const { server, close } = createApp({ store, collector, hf });
+  let as = null;
+  if (cfg.as) {
+    const { AsCollector, storeConfig } = require('./lib/ascollector');
+    const asStore = new Store(storeConfig(cfg));
+    asStore.load();
+    as = { store: asStore, collector: new AsCollector({ cfg, store: asStore }) };
+  }
+  const { server, close } = createApp({ store, collector, hf, as });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -233,6 +246,7 @@ function main() {
   server.listen(cfg.port, cfg.host, () => {
     collector.start();
     if (hf) hf.collector.start();
+    if (as) as.collector.start();
     const s = collector.status();
     console.log(`GitHub 베스트 대시보드  http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}`);
     console.log(`  캐시에서 불러온 기간 ${cached}개, 새로 받을 기간 ${s.missing}개`);
@@ -243,6 +257,7 @@ function main() {
     process.on(signal, () => {
       collector.stop();
       if (hf) hf.collector.stop();
+      if (as) as.collector.stop();
       close();
       setTimeout(() => process.exit(0), 500).unref();
     });
