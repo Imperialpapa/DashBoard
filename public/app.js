@@ -427,6 +427,8 @@
   const POLL_GAP = 10 * 60_000;
   let polledAt = 0;
   const nextAt = (m) => m.nextAt || m.builtAt + m.every;
+  /** 순위를 마지막으로 받아 온 때. 푸시로 화면만 다시 낸 판은 만든 때(builtAt)보다 이르다. */
+  const collectedAt = (m) => m.collectedAt || m.builtAt;
   async function poll() {
     if (document.hidden) return;
     const cur = state.meta;
@@ -977,9 +979,10 @@
     if (!state.live && state.meta) {
       // 예약 실행이 한참 밀리거나 멈췄으면 알린다.
       const m = state.meta;
-      const late = now() - m.builtAt > Math.max(3 * m.every, 3_600_000);
+      const at = collectedAt(m);
+      const late = now() - at > Math.max(3 * m.every, 3_600_000);
       el.live.dataset.state = late ? 'off' : 'static';
-      el.liveText.textContent = late ? `${rel(m.builtAt)} 수집 뒤로 갱신이 없습니다` : `${everText()}마다 갱신, ${rel(m.builtAt)} 수집`;
+      el.liveText.textContent = late ? `${rel(at)} 수집 뒤로 갱신이 없습니다` : `${everText()}마다 갱신, ${rel(at)} 수집`;
       return;
     }
     if (!state.connected) {
@@ -995,7 +998,7 @@
   function renderStaticStatus() {
     const st = currentStatus();
     const m = state.meta;
-    const rows = [['마지막 수집', rel(m.builtAt)]];
+    const rows = [['마지막 수집', rel(collectedAt(m))]];
     rows.push([`이 ${S().bucket} 확인`, st && st.fetchedAt ? rel(st.fetchedAt) : '아직 없음']);
     if (st && st.dataAt) rows.push(['순위가 바뀐 때', rel(st.dataAt)]);
     rows.push(['다음 수집', until(nextAt(m))]);
@@ -1173,7 +1176,11 @@
       const res = await fetch(`api/refresh?src=${state.src}&type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
       const body = await res.json();
       if (res.ok) text = '갱신을 요청했습니다';
-      else if (body.reason === 'cooldown') text = `방금 확인했습니다. ${Math.ceil(body.retryInMs / 1000)}초 뒤에 다시 누를 수 있습니다`;
+      else if (body.reason === 'cooldown') {
+        // 한 시간에 한 번까지만 다시 받는다(config.js의 collect.minGap).
+        const sec = Math.ceil(body.retryInMs / 1000);
+        text = sec > 90 ? `받은 지 한 시간이 안 됐습니다. ${Math.ceil(sec / 60)}분 뒤에 다시 받을 수 있습니다` : `방금 확인했습니다. ${sec}초 뒤에 다시 누를 수 있습니다`;
+      }
       else text = '지금은 갱신할 수 없습니다';
     } catch {
       text = '서버에 연결하지 못했습니다';

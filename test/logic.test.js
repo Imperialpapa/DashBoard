@@ -14,7 +14,8 @@ const { Collector } = require(path.join(root, 'lib/collector'));
 const { GitHubError } = require(path.join(root, 'lib/github'));
 const fullCfg = require(path.join(root, 'config'));
 // 덧붙는 출처는 시험마다 필요한 것만 켠다(켜 두면 build()가 실제 API를 부른다). Hacker News는 15번에서 따로 켠다.
-const baseCfg = { ...fullCfg, hn: null, hf: { ...fullCfg.hf, kinds: ['models'] } }; // Hugging Face는 모델만(Space·데이터셋은 16번에서)
+// collect.minGap: 0 → 시험은 잇달아 받아 보므로 "한 시간에 한 번까지"를 꺼 둔다(그 한계는 17번에서 실제 값으로 본다).
+const baseCfg = { ...fullCfg, hn: null, hf: { ...fullCfg.hf, kinds: ['models'] }, collect: { ...fullCfg.collect, minGap: 0 } }; // Hugging Face는 모델만(Space·데이터셋은 16번에서)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -158,7 +159,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
   // 4) 한도 초과: 리셋 시각까지 전체 일시정지, 기존 데이터 유지
   {
     let mode = 'ok';
-    const reset = Math.floor(Date.now() / 1000) + 3600;
+    const reset = Math.floor(Date.now() / 1000) + 6 * 3600; // 다음 갱신 예정(보는 사람이 없으면 5시간 뒤)보다 늦은 때
     const { store, collector, calls } = setup('limit', async () => {
       if (mode === 'limit') throw new GitHubError('API rate limit exceeded', { status: 403, rate: { limit: 60000, remaining: 0, reset } });
       return { total: 100, incomplete: false, items: page(100, 3000), rate: FAST };
@@ -269,9 +270,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     j.boost = 0;
     const b = collector.store.get('monthly', 'rolling');
     collector.viewers = 0;
-    assert.equal(collector.dueAt(j, now) - b.fetchedAt, 5 * 60_000 * 5);
+    assert.equal(collector.dueAt(j, now) - b.fetchedAt, baseCfg.refresh.monthly.rolling * baseCfg.idleFactor);
     collector.viewers = 1;
-    assert.equal(collector.dueAt(j, now) - b.fetchedAt, 5 * 60_000);
+    assert.equal(collector.dueAt(j, now) - b.fetchedAt, baseCfg.refresh.monthly.rolling);
     void calls;
     ok('scheduler: 첫 화면 우선, 사용자가 연 구간 우선, 쿨다운, 유휴 시 주기 연장');
   }
@@ -1195,6 +1196,169 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual([b3.hfs.written, b3.hfd.written, Boolean(meta3.hfs), meta3.hfd], [5, 0, true, undefined]);
     console.warn = warn;
     ok('hugging face space·데이터셋: 항목 모양, 켜고 끄기, 종류별 저장, 서버 주소, 차례로 받기, 이어받기, 일부 실패');
+  }
+
+  // 17) 수집 주기의 한계: 하루 두 번 이상, 한 시간에 한 번 이하(config.js의 collect). 여기서는 실제 값으로 본다.
+  {
+    const HOUR = 3_600_000;
+    const { build } = require(path.join(root, 'lib/build'));
+    const { HnCollector, storeConfig } = require(path.join(root, 'lib/hncollector'));
+    const { minGap, maxGap } = fullCfg.collect;
+    assert.deepEqual([minGap, maxGap], [HOUR, 12 * HOUR]);
+
+    // 설정에 적힌 주기는 모두 범위 안이다.
+    const live = periods.TYPES.flatMap((t) => [fullCfg.refresh[t].rolling, fullCfg.refresh[t].current]);
+    for (const ms of [...live, fullCfg.hf.refresh, fullCfg.hn.refresh, fullCfg.as.refresh, fullCfg.static.every]) {
+      assert.ok(ms >= minGap && ms <= maxGap, `주기 ${ms}ms가 범위 밖`);
+    }
+    // 예약 실행(워크플로의 cron)은 config.js의 static.at과 같고, 잇단 두 회차 사이가 범위 안이다.
+    const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
+    const crons = [...yml.matchAll(/^\s*- cron: '(\d+) ([\d,]+) \* \* \*'/gm)];
+    assert.equal(crons.length, 1);
+    const hours = crons[0][2].split(',').map(Number);
+    assert.deepEqual({ hours, minute: Number(crons[0][1]) }, fullCfg.static.at);
+    assert.ok(hours.length >= 2, '하루 두 번 이상');
+    hours.forEach((h, i) => {
+      const gap = ((hours[(i + 1) % hours.length] - h + 24) % 24 || 24) * HOUR;
+      assert.ok(gap >= minGap && gap <= maxGap, `${h}시 회차에서 다음 회차까지 ${gap / HOUR}시간`);
+    });
+
+    // 설정을 범위 밖으로 적어도 범위 안으로 맞춰진다.
+    const wild = { ...fullCfg, refresh: { ...fullCfg.refresh, weekly: { rolling: 2 * 60_000, current: 3 * 24 * HOUR }, recentClosed: 60_000 } };
+    const at = Date.parse('2026-11-12T03:00:00Z');
+    const d = (type, key) => periods.describe(type, key, at);
+    assert.equal(periods.interval(d('weekly', 'rolling'), at, wild), minGap); // 2분 → 한 시간
+    assert.equal(periods.interval(d('weekly', '2026-W46'), at, wild), maxGap); // 3일 → 12시간
+    assert.equal(periods.interval(d('weekly', '2026-W45'), at, wild), minGap); // 끝난 기간도 한 시간보다 자주 받지는 않는다
+    assert.equal(periods.interval(d('yearly', '2012'), at, wild), fullCfg.refresh.archive); // 끝난 기간은 드물게 확인해도 된다
+    assert.deepEqual(periods.gaps({}), { min: 0, max: Infinity }); // 설정에 없으면 한계를 두지 않는다
+
+    // GitHub 수집기: 받은 지 한 시간이 안 된 기간은 다시 받지 않는다.
+    const year = new Date().getUTCFullYear();
+    const small = { collect: fullCfg.collect, listed: { weekly: 0, monthly: 0 }, eager: { weekly: 0, monthly: 0 }, firstYear: year };
+    const gh = setup('gapGh', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }), small);
+    gh.collector.viewers = 1;
+    // 최근 7일·이번 주, 최근 30일·이번 달, 올해 = 5개
+    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 5, failed: 0, left: 0 });
+    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 0, failed: 0, left: 0 });
+    assert.equal(gh.calls.length, 5);
+    // '지금 갱신'을 눌러도 마찬가지다(단추 쿨다운 30초가 지났어도).
+    const jr = job(gh.collector, 'weekly', 'rolling');
+    jr.lastAttemptAt -= 60_000;
+    let cool = gh.collector.request('weekly', 'rolling', { force: true });
+    assert.equal(cool.reason, 'cooldown');
+    assert.ok(cool.retryInMs > minGap - 60_000 && cool.retryInMs <= minGap, `${cool.retryInMs}`);
+    // 보는 사람이 없어 주기를 늘려도 진행 중인 기간은 하루 두 번보다 드물어지지 않는다.
+    gh.collector.cfg = { ...gh.cfg, idleFactor: 100 };
+    gh.collector.viewers = 0;
+    assert.equal(gh.collector.dueAt(jr, Date.now()) - gh.store.get('weekly', 'rolling').fetchedAt, maxGap);
+    gh.collector.viewers = 1;
+    assert.equal(gh.collector.dueAt(jr, Date.now()) - gh.store.get('weekly', 'rolling').fetchedAt, minGap);
+    // 한 시간이 지나면 다시 받는다.
+    for (const b of gh.store.buckets.values()) b.fetchedAt -= minGap;
+    assert.deepEqual(gh.collector.request('weekly', 'rolling', { force: true }), { ok: true, queued: true });
+    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 5, failed: 0, left: 0 });
+    assert.equal(gh.calls.length, 10);
+
+    // 한 번에 훑는 수집기(Hacker News로 본다): 주기를 1분으로 적어도 한 시간으로 맞춰지고, 훑은 지 한 시간이 안 됐으면 다시 훑지 않는다.
+    const hnCalls = [];
+    const hnSearch = async ({ from, to }) => {
+      hnCalls.push(`${from}..${to}`);
+      return { items: [{ id: 's1', name: 'Story', owner: 'u', avatar: '', url: 'https://a.example/1', hn: 'https://news.ycombinator.com/item?id=1', desc: '', lang: 'a.example', stars: 10, comments: 1, created: new Date().toISOString() }], total: 1 };
+    };
+    const cfgG = (name, over = {}) => ({
+      ...fullCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, name), listed: { weekly: 0, monthly: 0 }, firstYear: year,
+      hn: { ...fullCfg.hn, listed: { weekly: 0, monthly: 0 }, firstYear: year, refresh: 60_000 },
+      static: { every: 12 * HOUR, budget: 5000 }, ...over,
+    });
+    const cfgH = cfgG('gapHn');
+    const hs = new Store(storeConfig(cfgH));
+    hs.load();
+    const hc = new HnCollector({ cfg: cfgH, store: hs, search: hnSearch });
+    assert.equal(hc.refresh, minGap);
+    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 5, failed: 0, left: 0 });
+    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 0, failed: 0, left: 0, skipped: true });
+    assert.equal(hnCalls.length, 5);
+    hc.lastAttemptAt -= 60_000;
+    cool = hc.request('weekly', 'rolling', { force: true });
+    assert.equal(cool.reason, 'cooldown');
+    assert.ok(cool.retryInMs > minGap - 60_000 && cool.retryInMs <= minGap, `${cool.retryInMs}`);
+    hc.cfg = { ...cfgH, idleFactor: 100 };
+    assert.equal(hc.dueAt() - hc.lastWalkAt, maxGap); // 보는 사람이 없어도 하루 두 번
+    hc.viewers = 1;
+    assert.equal(hc.dueAt() - hc.lastWalkAt, minGap);
+    hc.lastWalkAt -= minGap;
+    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 5, failed: 0, left: 0 });
+    assert.equal(hnCalls.length, 10);
+
+    // 빌드: 받은 지 한 시간이 안 됐으면 어느 출처도 다시 받지 않고, 이어받은 것을 그대로 써 낸다.
+    const ghCalls = [];
+    const ghSearch = async ({ q }) => {
+      ghCalls.push(q);
+      return { total: 1000, incomplete: false, items: page(100, 5000), rate: FAST };
+    };
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    /** 배포본에 실린 수집 상태를 ms만큼 과거로 옮긴다(그만큼 시간이 흐른 것처럼). */
+    const age = (dir, ms) => {
+      for (const sub of ['data/state', 'data/hn/state']) {
+        const folder = path.join(dir, sub);
+        for (const name of fs.existsSync(folder) ? fs.readdirSync(folder) : []) {
+          const st = JSON.parse(fs.readFileSync(path.join(folder, name), 'utf8'));
+          st.fetchedAt -= ms;
+          for (const p of st.history) p.t -= ms;
+          fs.writeFileSync(path.join(folder, name), JSON.stringify(st));
+        }
+      }
+    };
+    const readJson = (dir, rel) => JSON.parse(fs.readFileSync(path.join(dir, rel), 'utf8'));
+    const seeded = (dir) => ({ seedUrl: 'https://example.test/site/', fetchImpl: served(dir) });
+    const api = { hn: hnSearch };
+    const logs = [];
+    const log = (s) => logs.push(s);
+    hnCalls.length = 0;
+
+    const out1 = path.join(TMP, 'siteG1');
+    const b1 = await build({ cfg: cfgG('gapB1'), out: out1, search: ghSearch, api, log });
+    assert.deepEqual([b1.ran, b1.hn.ran, b1.collected, ghCalls.length, hnCalls.length], [5, 5, true, 5, 5]);
+    const meta1 = readJson(out1, 'data/meta.json');
+    assert.ok(meta1.collectedAt <= meta1.builtAt && meta1.builtAt - meta1.collectedAt < 5000);
+    assert.equal(b1.collectedAt, meta1.collectedAt);
+
+    // 10분 뒤에 푸시로 다시 빌드: API를 한 번도 부르지 않고, 순위는 그대로, 화면 파일은 새로 낸다.
+    age(out1, 10 * 60_000);
+    const out2 = path.join(TMP, 'siteG2');
+    const b2 = await build({ cfg: cfgG('gapB2'), out: out2, search: ghSearch, api, log, ...seeded(out1) });
+    assert.deepEqual([b2.loaded, b2.ran, b2.left, b2.written, b2.collected], [5, 0, 0, 5, false]);
+    assert.deepEqual([b2.hn.loaded, b2.hn.ran, b2.hn.skipped, b2.hn.written], [5, 0, true, 5]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [5, 5]);
+    const meta2 = readJson(out2, 'data/meta.json');
+    const sinceCollect = meta2.builtAt - meta2.collectedAt; // 마지막 수집은 10분 전 그대로
+    assert.ok(sinceCollect >= 10 * 60_000 && sinceCollect < 10 * 60_000 + 10_000, `${sinceCollect}`);
+    assert.deepEqual([readJson(out2, 'data/weekly.rolling.json').version, readJson(out2, 'data/hn/weekly.rolling.json').version], [1, 1]);
+    assert.ok(meta2.hn.types.weekly.every((b) => b.hasData));
+    assert.ok(fs.existsSync(path.join(out2, 'app.js')));
+    assert.ok(logs.some((s) => /새로 받지 않았습니다/.test(s)), logs.join(' | '));
+
+    // 한 시간이 지난 뒤의 빌드는 다시 받는다.
+    age(out1, 50 * 60_000 + 1000);
+    const b3 = await build({ cfg: cfgG('gapB3'), out: path.join(TMP, 'siteG3'), search: ghSearch, api, log, ...seeded(out1) });
+    assert.deepEqual([b3.loaded, b3.ran, b3.hn.ran, b3.hn.skipped, b3.collected], [5, 5, 5, undefined, true]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [10, 10]);
+
+    // 출처마다 따로 따진다: 새로 켠 출처는 다른 출처를 방금 받았더라도 바로 받는다.
+    const outA = path.join(TMP, 'siteG4');
+    await build({ cfg: cfgG('gapB4', { hn: null }), out: outA, search: ghSearch, log });
+    age(outA, 10 * 60_000);
+    ghCalls.length = 0;
+    hnCalls.length = 0;
+    const b5 = await build({ cfg: cfgG('gapB5'), out: path.join(TMP, 'siteG5'), search: ghSearch, api, log, ...seeded(outA) });
+    assert.deepEqual([b5.ran, b5.hn.loaded, b5.hn.ran, b5.hn.written, b5.collected], [0, 0, 5, 5, true]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [0, 5]);
+    ok('수집 주기: 하루 두 번 이상·한 시간에 한 번 이하, 설정과 cron, 범위 밖 설정 맞추기, 잇단 빌드·수동 갱신은 다시 받지 않음, 새 출처는 바로');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

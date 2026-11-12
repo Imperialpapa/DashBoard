@@ -27,22 +27,31 @@ module.exports = {
   listed: { weekly: 26, monthly: 36 },
   eager: { weekly: 8, monthly: 12 },
 
-  // 구간별 갱신 주기. 변화가 빠른 구간일수록 자주 확인한다.
+  // 수집 주기의 한계. 어떤 방식으로 돌리든(GitHub Actions 빌드, 로컬 서버, '지금 갱신') 이 범위를 벗어나지 않는다.
+  //   minGap: 같은 것을 이보다 자주 받지 않는다(한 시간에 한 번까지). 푸시나 수동 실행으로 빌드가 잇달아 돌아도
+  //           받은 지 한 시간이 안 된 것은 다시 받지 않고, 지난 배포본에서 이어받은 것을 그대로 싣는다.
+  //   maxGap: 진행 중인 기간(최근 N일, 이번 주·달·해)과 차트를 이보다 드물게 받지 않는다(하루 두 번 이상).
+  //           끝난 기간은 순위가 거의 바뀌지 않으므로 아래 refresh의 주기로 가끔만 다시 확인한다.
+  // 아래의 주기들(refresh, hf·hn·as의 refresh, static.every)이 이 범위를 벗어나면 범위 안으로 맞춰진다.
+  collect: { minGap: HOUR, maxGap: 12 * HOUR },
+
+  // 구간별 갱신 주기(로컬 서버). 정적 사이트는 빌드할 때 이 주기가 지난 것만 다시 받는다.
   refresh: {
-    weekly: { rolling: 2 * MIN, current: 5 * MIN },
-    monthly: { rolling: 5 * MIN, current: 10 * MIN },
-    yearly: { rolling: 15 * MIN, current: 15 * MIN },
+    weekly: { rolling: HOUR, current: HOUR },
+    monthly: { rolling: HOUR, current: HOUR },
+    yearly: { rolling: HOUR, current: HOUR },
     recentClosed: 6 * HOUR, // 끝난 지 35일 이내
     closed: DAY, // 끝난 지 400일 이내
     archive: 7 * DAY, // 그보다 오래된 구간
   },
 
-  // 대시보드를 보고 있는 사람이 없으면 주기를 이만큼 늘려 API 한도를 아낀다.
+  // 대시보드를 보고 있는 사람이 없으면 주기를 이만큼 늘려 API 한도를 아낀다(진행 중인 기간은 collect.maxGap까지만).
   idleFactor: 5,
 
   // "최근 증가"와 순위 변동을 계산하기 위한 스냅샷 보관 규칙.
   history: { spacing: 30 * MIN, window: 25 * HOUR, max: 60, minSpan: 10 * MIN },
 
+  // '지금 갱신'을 잇달아 누를 때의 간격. 받은 지 collect.minGap이 안 된 것은 눌러도 다시 받지 않는다.
   manualRefreshCooldown: 30_000,
 
   // Hugging Face 탭(lib/hf.js, lib/hfcollector.js): 목록을 좋아요순으로 훑어 만든 날짜로 기간에 나눠 담는다.
@@ -56,7 +65,7 @@ module.exports = {
     listed: { weekly: 26, monthly: 36 }, // 기간 목록에 노출할 과거 구간 수(모두 미리 받는다)
     pageSize: 1000, // 한 번에 받는 개수(API 최대값)
     maxPages: 60, // 한 번 훑을 때 받는 쪽 수 상한. 여기까지 가도 100개가 안 찬 기간은 찬 만큼만 보여 준다
-    refresh: 30 * MIN, // 로컬 서버가 다시 훑는 간격(정적 사이트는 빌드할 때마다 한 번)
+    refresh: HOUR, // 로컬 서버가 다시 훑는 간격(정적 사이트는 빌드할 때 한 번, 받은 지 collect.minGap이 지났을 때만)
   },
 
   // Hacker News 탭(lib/hn.js, lib/hncollector.js): 기간마다 그때 올라온 글을 점수순으로 검색한다. 토큰이 필요 없다.
@@ -65,7 +74,7 @@ module.exports = {
     firstYear: 2007, // 연간 목록의 시작(Hacker News는 2006년 10월에 열렸다)
     listed: { weekly: 26, monthly: 36 }, // 기간 목록에 노출할 과거 구간 수(모두 미리 받는다)
     concurrency: 4, // 동시에 보내는 검색 수
-    refresh: 30 * MIN, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때마다 한 번). 끝난 기간은 위 refresh의 주기로만 다시 확인한다
+    refresh: HOUR, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때 한 번). 끝난 기간은 위 refresh의 주기로만 다시 확인한다
   },
 
   // App Store 탭(lib/appstore.js, lib/ascollector.js): 인기 차트를 종합과 카테고리별로 100위까지 받는다.
@@ -84,13 +93,14 @@ module.exports = {
     concurrency: 4, // 차트 피드를 동시에 받는 수
     lookupBatch: 200, // 평가 수를 한 번에 조회하는 앱 수(API 최대값)
     lookupSpacing: 3000, // 조회 사이 최소 간격. 조회 API 한도는 분당 20회쯤이다
-    refresh: 60 * MIN, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때마다 한 번)
+    refresh: HOUR, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때 한 번)
   },
 
   // 정적 사이트 빌드(lib/build.js, GitHub Actions + Pages)용.
   //   every : 빌드가 도는 간격(하루 두 번). 화면에 "약 12시간마다"로 표시된다.
   //   at    : 예약 실행 시각(UTC). 한국 시간 9시·21시 = UTC 0시·12시. 화면은 이 시각이 지난 뒤에야 새 판을 확인한다.
   //   budget: 한 번의 빌드가 수집에 쓰는 시간 상한. 못 받은 기간은 다음 빌드에서 이어 받는다.
-  // every와 at은 .github/workflows/pages.yml의 cron과 맞춘다.
+  // every와 at은 .github/workflows/pages.yml의 cron과 맞춘다. 예약 간격은 collect의 범위 안이어야 한다(시험이 확인한다).
+  // 푸시·수동 실행으로 그 사이에 빌드가 돌면 화면 파일은 새로 내지만, 받은 지 collect.minGap이 안 된 것은 다시 받지 않는다.
   static: { every: 12 * HOUR, at: { hours: [0, 12], minute: 7 }, budget: 9 * MIN },
 };
