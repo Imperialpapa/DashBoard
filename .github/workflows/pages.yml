@@ -1,0 +1,57 @@
+# 순위를 주기적으로 받아 정적 사이트로 만들어 GitHub Pages에 올린다.
+# 서버가 없으므로 수집 상태(순위와 스냅샷 이력)는 지난번 배포본에서 이어받는다(lib/build.js).
+name: Collect and deploy
+
+on:
+  schedule:
+    # 약 15분마다(UTC). 간격을 바꾸면 config.js의 static.every도 맞춘다.
+    # GitHub의 예약 실행은 붐빌 때 늦어지거나 건너뛸 수 있다.
+    - cron: '3,18,33,48 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 한 번에 하나씩. 진행 중인 것을 취소하지 않고 끝까지 둔다(중간에 끊기면 그 회차 수집이 버려진다).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Test
+        if: github.event_name != 'schedule'
+        run: npm test
+
+      - name: Collect rankings and build the site
+        run: npm run build
+        env:
+          # 저장소 권한이 아니라 검색 API 한도(분당 30회)를 위해서만 쓴다.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEED_URL: ${{ steps.pages.outputs.base_url }}
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v5

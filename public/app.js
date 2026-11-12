@@ -1,0 +1,964 @@
+(() => {
+  'use strict';
+
+  const TYPES = ['weekly', 'monthly', 'yearly'];
+  const DAY = 86_400_000;
+  const NO_LANG = '언어 표시 없음';
+  const CURRENT_LABEL = { weekly: '이번 주', monthly: '이번 달', yearly: '올해' };
+  const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+  // GitHub이 언어마다 쓰는 색(linguist). 항상 언어 이름과 함께 표시한다.
+  const LANG_COLORS = {
+    JavaScript: '#f1e05a', TypeScript: '#3178c6', Python: '#3572A5', Go: '#00ADD8', Rust: '#dea584',
+    Java: '#b07219', C: '#555555', 'C++': '#f34b7d', 'C#': '#178600', Swift: '#F05138', Kotlin: '#A97BFF',
+    Ruby: '#701516', PHP: '#4F5D95', Shell: '#89e051', HTML: '#e34c26', CSS: '#663399', Vue: '#41b883',
+    Svelte: '#ff3e00', Dart: '#00B4AB', Zig: '#ec915c', Lua: '#000080', 'Jupyter Notebook': '#DA5B0B',
+    'Objective-C': '#438eff', Scala: '#c22d40', Elixir: '#6e4a7e', Haskell: '#5e5086', R: '#198CE7',
+    MDX: '#fcb32c', Markdown: '#083fa1', Nix: '#7e7eff', Dockerfile: '#384d54', PowerShell: '#012456',
+    Astro: '#ff5a03', Solidity: '#AA6746', TeX: '#3D6117', 'Vim Script': '#199f4b', Makefile: '#427819',
+    HCL: '#844FBA', OCaml: '#ef7a08', Clojure: '#db5855', Perl: '#0298c3', Assembly: '#6E4C13',
+    Julia: '#a270ba', Nim: '#ffc200', GDScript: '#355570', Batchfile: '#C1F12E', 'Emacs Lisp': '#c065db',
+    Typst: '#239dad', Cuda: '#3A4E3A', Mojo: '#ff4c1f', Gleam: '#ffaff3', Roff: '#ecdebe', SCSS: '#c6538c',
+    Erlang: '#B83998', 'F#': '#b845fc', Groovy: '#4298b8', Verilog: '#b2b7f8', Move: '#4a137a',
+  };
+
+  const $ = (sel) => document.querySelector(sel);
+  const el = {
+    live: $('#live'), liveText: $('#liveText'), themeBtn: $('#themeBtn'),
+    types: $('.types'), prev: $('#prevBtn'), next: $('#nextBtn'), period: $('#periodSelect'), sub: $('#periodSub'),
+    seg: $('.seg'), lang: $('#langSelect'), search: $('#search'), count: $('#count'),
+    notice: $('#notice'), cols: $('#cols'), gainHead: $('#gainHead'), rows: $('#rows'), empty: $('#empty'),
+    langs: $('#langs'), hist: $('#hist'), status: $('#status'),
+    refreshBtn: $('#refreshBtn'), refreshMsg: $('#refreshMsg'), tip: $('#tip'),
+    spamLabel: $('#spamLabel'), spamToggle: $('#spamToggle'), spamCount: $('#spamCount'),
+  };
+
+  const state = {
+    type: 'weekly',
+    key: 'rolling',
+    sort: 'rank',
+    lang: '',
+    q: '',
+    hideSpam: true, // 스팸 의심 저장소를 빼고 보기
+    items: [], // 지금 보기 방식(스팸 숨김 여부)에 맞춘 순위표 항목
+    meta: null, // 기간 목록
+    metaDay: 0, // 기간 목록을 받은 날(UTC 일 번호)
+    status: new Map(), // 'type/key' → 그 기간의 수집 상태
+    collector: null,
+    data: null, // 지금 보고 있는 순위 데이터
+    dataId: '',
+    view: 'loading', // loading | ready | pending | invalid | offline
+    live: true, // 서버 방식(실시간 연결)인지. 정적 사이트면 false이고 주기적으로 다시 읽는다
+    connected: false,
+    everConnected: false,
+    skew: 0, // 서버 시계 - 내 시계
+    loadSeq: 0,
+    loadingId: '', // 지금 순위를 받고 있는 기간
+    retryTimer: 0,
+  };
+
+  // ── 표기 도우미 ───────────────────────────────────────────────
+  const nf = new Intl.NumberFormat('ko-KR');
+  const fmt = (n) => nf.format(n);
+  const pad = (n) => String(n).padStart(2, '0');
+  const now = () => Date.now() + state.skew;
+  const esc = (s) =>
+    String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  const ymd = (isoDate) => isoDate.slice(0, 10).replaceAll('-', '.');
+  const md = (isoDate) => isoDate.slice(5, 10).replace('-', '.');
+
+  function rel(t) {
+    const s = Math.max(0, Math.round((now() - t) / 1000));
+    if (s < 5) return '방금';
+    if (s < 60) return `${s}초 전`;
+    if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+    if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+    return `${Math.floor(s / 86400)}일 전`;
+  }
+
+  function until(t) {
+    const s = Math.round((t - now()) / 1000);
+    if (s <= 0) return '곧';
+    if (s < 3600) return `${Math.floor(s / 60)}:${pad(s % 60)} 뒤`;
+    if (s < 86400) return `${Math.floor(s / 3600)}시간 ${Math.floor((s % 3600) / 60)}분 뒤`;
+    return `${Math.floor(s / 86400)}일 뒤`;
+  }
+
+  function spanText(ms) {
+    const m = Math.round(ms / 60000);
+    return m < 90 ? `${m}분` : `${Math.round(m / 60)}시간`;
+  }
+
+  function ageText(created) {
+    const ms = now() - Date.parse(created);
+    if (ms < 3_600_000) return `${Math.max(1, Math.floor(ms / 60000))}분 전 생성`;
+    if (ms < DAY) return `${Math.floor(ms / 3_600_000)}시간 전 생성`;
+    if (ms < 60 * DAY) return `${Math.floor(ms / DAY)}일 전 생성`;
+    return `${ymd(created)} 생성`;
+  }
+
+  function approxKo(n) {
+    if (n >= 1e8) return `${(n / 1e8).toFixed(1)}억`;
+    if (n >= 1e4) {
+      const man = Math.round(n / 1e4);
+      const digits = String(man).length;
+      const unit = 10 ** Math.max(0, digits - 2);
+      return `${fmt(Math.round(man / unit) * unit)}만`;
+    }
+    return fmt(n);
+  }
+
+  const pace = (r, asOf) => r.stars / Math.max(1, (asOf - Date.parse(r.created)) / DAY);
+  const langOf = (r) => r.lang || NO_LANG;
+  const idOf = (type, key) => `${type}/${key}`;
+  const currentId = () => idOf(state.type, state.key);
+  const listing = () => (state.meta ? state.meta.types[state.type] : []);
+  const currentDesc = () => listing().find((d) => d.key === state.key) || null;
+  const currentStatus = () => state.status.get(currentId()) || null;
+
+  /**
+   * 서버는 "받은 그대로의 상위 N개"와 "스팸 의심을 뺀 상위 N개"를 한 목록에 담아 준다.
+   * 지금 보기 방식에 해당하는 쪽만 골라, 그 방식의 순위·변동을 rank·move로 맞춘다.
+   */
+  function chartItems() {
+    const d = state.data;
+    if (state.view !== 'ready' || !d) return [];
+    const top = d.top || 100;
+    if (!state.hideSpam) return d.items.filter((r) => r.rank <= top);
+    return d.items.filter((r) => !r.spam && r.crank <= top).map((r) => ({ ...r, rank: r.crank, move: r.cmove }));
+  }
+
+  /** 스팸 의심 개수: 숨김 상태에서는 건너뛴 개수, 아니면 순위표에 섞여 있는 개수 */
+  function spamCount() {
+    const d = state.data;
+    if (state.view !== 'ready' || !d) return 0;
+    if (!state.hideSpam) return state.items.filter((r) => r.spam).length;
+    return d.skipped || 0; // 순위표 밖에서 건너뛴 것까지 서버가 센 값
+  }
+
+  /** 목록에 없는 기간(주소로 직접 연 오래된 기간)의 이름 */
+  function keyLabel(key) {
+    let m;
+    if ((m = /^(\d{4})-W(\d{2})$/.exec(key))) return `${m[1]}년 ${+m[2]}주차`;
+    if ((m = /^(\d{4})-(\d{2})$/.exec(key))) return `${m[1]}년 ${+m[2]}월`;
+    if (/^\d{4}$/.test(key)) return `${key}년`;
+    return key;
+  }
+
+  function langDot(lang) {
+    const color = LANG_COLORS[lang];
+    return `<i class="lang-dot"${color ? ` style="background:${color}"` : ''}></i>`;
+  }
+
+  // ── 주소(#weekly/rolling) ─────────────────────────────────────
+  function readHash() {
+    const m = /^#(weekly|monthly|yearly)\/([\w-]+)$/.exec(location.hash);
+    state.type = m ? m[1] : 'weekly';
+    state.key = m ? m[2] : 'rolling';
+  }
+
+  function go(type, key) {
+    const hash = `#${type}/${key}`;
+    if (location.hash === hash) return;
+    location.hash = hash;
+  }
+
+  // ── 서버 통신 ────────────────────────────────────────────────
+  function applyMeta(meta) {
+    state.meta = meta;
+    state.live = meta.live !== false;
+    state.metaDay = Math.floor(meta.now / DAY);
+    // 서버 방식에서는 서버 시계에 맞춘다. 정적 사이트의 meta.now는 만든 시각이라 시계 보정에 쓸 수 없다.
+    state.skew = state.live ? meta.now - Date.now() : 0;
+    document.documentElement.dataset.mode = state.live ? 'live' : 'static';
+    state.collector = meta.collector;
+    for (const type of TYPES) for (const b of meta.types[type]) state.status.set(idOf(type, b.key), b);
+    renderNav();
+    renderSub();
+    renderSpam();
+    renderStatus();
+  }
+
+  // 서버 방식과 정적 사이트가 같은 주소를 쓴다(주소는 모두 상대 경로: 하위 경로에 올려도 된다).
+  const fetchMeta = () =>
+    fetch('data/meta.json', { cache: 'no-cache' }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
+
+  async function loadChart({ live = false } = {}) {
+    const seq = ++state.loadSeq;
+    const { type, key } = state;
+    const id = idOf(type, key);
+    clearTimeout(state.retryTimer);
+
+    // 정적 사이트: 목록에는 있지만 아직 만들어지지 않은 기간은 파일이 없으니 요청하지 않는다.
+    const known = state.status.get(id);
+    if (!state.live && known && !known.hasData) {
+      state.loadingId = '';
+      state.view = 'pending';
+      state.data = null;
+      state.dataId = '';
+      renderAll();
+      return;
+    }
+    state.loadingId = id;
+
+    let res;
+    try {
+      // ?v=는 브라우저·CDN이 예전 판을 돌려주지 않게 하는 꼬리표다.
+      const v = known && known.version ? `?v=${known.version}` : '';
+      res = await fetch(`data/${type}.${encodeURIComponent(key)}.json${v}`, state.live ? undefined : { cache: 'no-cache' });
+    } catch {
+      if (seq !== state.loadSeq) return;
+      state.loadingId = '';
+      if (state.dataId !== id) state.view = 'offline';
+      renderAll();
+      state.retryTimer = setTimeout(() => loadChart({ live }), 5000);
+      return;
+    }
+    if (seq !== state.loadSeq) return;
+    state.loadingId = '';
+
+    if (res.status === 202) {
+      state.view = 'pending';
+      state.data = null;
+      state.dataId = '';
+      renderAll();
+      state.retryTimer = setTimeout(loadChart, 5000); // 푸시를 놓쳤을 때를 위한 안전망
+      return;
+    }
+    if (!res.ok) {
+      state.view = 'invalid';
+      state.data = null;
+      state.dataId = '';
+      renderAll();
+      return;
+    }
+
+    const data = await res.json();
+    if (seq !== state.loadSeq) return;
+    const sameView = state.dataId === id && state.view === 'ready';
+    state.data = data;
+    state.dataId = id;
+    state.view = 'ready';
+    renderAll({ live: live && sameView });
+    // 받는 사이에 서버 쪽 순위가 한 번 더 바뀌었으면 따라잡는다.
+    // (정적 사이트에서는 CDN 반영이 늦을 수 있어 여기서 되풀이하지 않고 다음 확인 때 다시 본다.)
+    const st = state.status.get(id);
+    if (state.live && st && st.version > data.version) loadChart({ live: true });
+  }
+
+  /** 정적 사이트: 새로 만들어진 판이 있는지 확인하고, 보고 있는 기간이 바뀌었으면 다시 받는다. */
+  async function poll() {
+    if (document.hidden) return;
+    let meta;
+    try {
+      meta = await fetchMeta();
+    } catch {
+      return; // 다음 확인 때 다시 본다
+    }
+    if (state.meta && meta.builtAt === state.meta.builtAt) return;
+    applyMeta(meta);
+    const id = currentId();
+    const st = state.status.get(id);
+    const stale = !state.data || state.dataId !== id || (st && st.version !== state.data.version);
+    if (st && st.hasData && stale && state.loadingId !== id) loadChart({ live: true });
+  }
+
+  function connect() {
+    const es = new EventSource('api/events');
+    es.addEventListener('hello', (e) => {
+      const again = state.everConnected;
+      state.connected = true;
+      state.everConnected = true;
+      applyMeta(JSON.parse(e.data));
+      const st = currentStatus();
+      // 끊겼다 다시 붙은 사이에 바뀐 내용이 있으면 따라잡는다.
+      if (again && st && st.hasData && (!state.data || st.version !== state.data.version)) loadChart({ live: true });
+      renderLive();
+    });
+    es.addEventListener('bucket', (e) => {
+      const st = JSON.parse(e.data);
+      const id = idOf(st.type, st.key);
+      state.status.set(id, { ...state.status.get(id), ...st });
+      if (id !== currentId()) return;
+      const stale = !state.data || state.dataId !== id || st.version !== state.data.version;
+      if (st.hasData && stale && state.loadingId !== id) loadChart({ live: true });
+      renderNotice();
+      renderStatus();
+    });
+    es.addEventListener('collector', (e) => {
+      state.collector = JSON.parse(e.data);
+      renderStatus();
+    });
+    es.onopen = () => {
+      state.connected = true;
+      renderLive();
+    };
+    es.onerror = () => {
+      state.connected = false; // EventSource가 알아서 다시 붙는다
+      renderLive();
+    };
+  }
+
+  // ── 그리기: 기간 선택 ─────────────────────────────────────────
+  function optionLabel(d) {
+    return d.kind === 'current' ? CURRENT_LABEL[state.type] : d.label;
+  }
+
+  function renderNav() {
+    for (const b of el.types.querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', String(b.dataset.type === state.type));
+    }
+    const list = listing();
+    const sig = `${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
+    if (el.period.dataset.sig !== sig) {
+      el.period.dataset.sig = sig;
+      const known = list.some((d) => d.key === state.key);
+      el.period.innerHTML =
+        list.map((d) => `<option value="${esc(d.key)}">${esc(optionLabel(d))}</option>`).join('') +
+        (known ? '' : `<option value="${esc(state.key)}">${esc(keyLabel(state.key))}</option>`);
+    }
+    el.period.value = state.key;
+    const i = list.findIndex((d) => d.key === state.key);
+    el.prev.disabled = i < 0 || i >= list.length - 1;
+    el.next.disabled = i <= 0;
+  }
+
+  function step(delta) {
+    const list = listing();
+    const i = list.findIndex((d) => d.key === state.key);
+    const target = list[i + delta];
+    if (i >= 0 && target) go(state.type, target.key);
+  }
+
+  function renderSub() {
+    // 기간을 막 바꿔 새 데이터가 아직 안 왔으면 이전 기간의 설명을 보여 주지 않는다.
+    const d = state.view === 'ready' && state.dataId === currentId() ? state.data : null;
+    const desc = currentDesc();
+    if (!d) {
+      if (!desc) el.sub.innerHTML = '&nbsp;';
+      else if (desc.kind === 'rolling') el.sub.textContent = `${ymd(desc.from)}부터 지금까지`;
+      else el.sub.textContent = `${desc.label}, ${ymd(desc.from)} – ${md(desc.to)}`;
+      return;
+    }
+    const kind = desc ? desc.kind : d.to ? 'closed' : 'rolling';
+    const toText = d.to ? (d.to.slice(0, 4) === d.from.slice(0, 4) ? md(d.to) : ymd(d.to)) : '';
+    let when;
+    if (kind === 'rolling') when = `${ymd(d.from)}부터 지금까지`;
+    else if (kind === 'current') when = `${desc.label}(${ymd(d.from)} – ${toText}), 지금까지`;
+    else when = `${ymd(d.from)} – ${toText}에`;
+    const total = d.total == null ? '' : d.approx ? ` 약 ${approxKo(d.total)}개` : ` ${fmt(d.total)}개`;
+    const skipped = state.hideSpam ? spamCount() : 0;
+    el.sub.textContent =
+      `${when} 만들어진 공개 저장소${total} 가운데 스타가 많은 순으로 ${state.items.length}개` +
+      (skipped ? ` (스팸 의심 ${fmt(skipped)}개 제외)` : '');
+  }
+
+  // ── 그리기: 순위표 ───────────────────────────────────────────
+  function visibleItems() {
+    const d = state.data;
+    let items = state.items;
+    if (state.lang) items = items.filter((r) => langOf(r) === state.lang);
+    if (state.q) {
+      const q = state.q.toLowerCase();
+      items = items.filter((r) => r.name.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q));
+    }
+    if (state.sort === 'gain') {
+      items = [...items].sort((a, b) => (b.gain ?? -Infinity) - (a.gain ?? -Infinity) || a.rank - b.rank);
+    } else if (state.sort === 'pace') {
+      items = [...items].sort((a, b) => pace(b, d.dataAt) - pace(a, d.dataAt));
+    }
+    return items;
+  }
+
+  function moveHtml(move) {
+    if (move === null || move === undefined) return '<span class="move"></span>';
+    if (move === 'new') return '<span class="move move-new" aria-label="새로 진입">NEW</span>';
+    if (move > 0) return `<span class="move move-up" aria-label="${move}계단 상승">▲${move}</span>`;
+    if (move < 0) return `<span class="move move-down" aria-label="${-move}계단 하락">▼${-move}</span>`;
+    return '<span class="move move-same" aria-label="변동 없음">–</span>';
+  }
+
+  function gainHtml(r, span) {
+    const tip = span ? ` data-tip="최근 ${spanText(span)} 동안의 스타 변화"` : '';
+    if (r.gain === null || r.gain === undefined) return `<div class="gain gain-none"${tip}>–</div>`;
+    if (r.gain > 0) return `<div class="gain gain-up"${tip}>+${fmt(r.gain)}</div>`;
+    if (r.gain < 0) return `<div class="gain gain-down"${tip}>−${fmt(-r.gain)}</div>`;
+    return `<div class="gain gain-none"${tip}>0</div>`;
+  }
+
+  function rowHtml(r, max, d) {
+    const slash = r.name.indexOf('/');
+    const owner = slash < 0 ? '' : r.name.slice(0, slash + 1);
+    const repo = slash < 0 ? r.name : r.name.slice(slash + 1);
+    const url = r.url.startsWith('https://') ? r.url : '#';
+    const avatar = r.avatar.startsWith('https://') ? `${r.avatar}${r.avatar.includes('?') ? '&' : '?'}s=72` : '';
+    const pct = max ? Math.max(0.5, (r.stars / max) * 100) : 0;
+    const share = max ? Math.round((r.stars / max) * 100) : 0;
+    return `<li class="row" data-id="${r.id}" data-stars="${r.stars}"${r.rank <= 3 ? ' data-top' : ''}>
+      <div class="rank"><span class="rank-num">${r.rank}</span>${moveHtml(r.move)}</div>
+      ${avatar ? `<img class="avatar" src="${esc(avatar)}" alt="" width="36" height="36" loading="lazy" decoding="async">` : '<span class="avatar"></span>'}
+      <div class="repo">
+        <a class="name" href="${esc(url)}" target="_blank" rel="noopener"><span class="owner">${esc(owner)}</span><span class="repo-name">${esc(repo)}</span></a>
+        ${r.desc ? `<p class="desc">${esc(r.desc)}</p>` : ''}
+        <p class="meta">
+          ${r.spam ? `<span class="flag" data-tip="${esc(spamRuleText())}">스팸 의심</span>` : ''}
+          ${r.lang ? `<span class="lang">${langDot(r.lang)}${esc(r.lang)}</span>` : ''}
+          <span>포크 ${fmt(r.forks)}</span>
+          <span>${ageText(r.created)}</span>
+          <span>하루 평균 ★ ${fmt(Math.round(pace(r, d.dataAt)))}</span>
+        </p>
+      </div>
+      <div class="stars" data-tip="스타 ${fmt(r.stars)}개&#10;이 기간 1위의 ${share}%">
+        <span class="bar"><i style="width:${pct.toFixed(2)}%"></i></span>
+        <span class="stars-val">${fmt(r.stars)}</span>
+      </div>
+      ${gainHtml(r, d.span)}
+    </li>`;
+  }
+
+  function showEmpty(title, body, action) {
+    el.rows.innerHTML = '';
+    el.cols.hidden = true;
+    el.empty.hidden = false;
+    // 금방 끝나는 첫 로딩에서는 문구가 깜빡이지 않게 조금 늦게 드러낸다.
+    el.empty.classList.toggle('late', state.view === 'loading');
+    el.empty.innerHTML =
+      `<strong>${esc(title)}</strong>${esc(body)}` +
+      (action ? `<div><button class="btn" type="button" data-action="${action.id}">${esc(action.label)}</button></div>` : '');
+  }
+
+  function renderBoard({ live = false } = {}) {
+    const d = state.data;
+    if (state.view !== 'ready' || !d) {
+      el.count.textContent = '';
+      if (state.view === 'pending') {
+        const c = state.collector;
+        const limit = c ? c.rate.limit : 10;
+        if (state.live) showEmpty('이 기간의 순위를 받아 오는 중입니다', `GitHub 검색 한도(분당 ${limit}회)에 맞춰 차례로 받고 있습니다. 받는 즉시 여기에 나타납니다.`);
+        else showEmpty('아직 받아 오지 못한 기간입니다', `다음 수집 때 채워집니다(${everText()}마다).`);
+      } else if (state.view === 'invalid' && !state.live) {
+        showEmpty('준비되지 않은 기간입니다', '이 사이트는 기간 목록에 있는 것만 미리 만들어 둡니다.', { id: 'home', label: '최근 7일 보기' });
+      } else if (state.view === 'invalid') {
+        showEmpty('없는 기간입니다', '주소가 잘못됐거나 아직 오지 않은 기간입니다.', { id: 'home', label: '최근 7일 보기' });
+      } else if (state.view === 'offline') {
+        showEmpty('데이터를 불러오지 못했습니다', '연결 상태를 확인하세요. 5초마다 다시 시도합니다.');
+      } else {
+        showEmpty('불러오는 중입니다', '');
+      }
+      return;
+    }
+
+    const items = visibleItems();
+    const total = state.items.length;
+    el.count.textContent = items.length === total ? `${fmt(total)}개` : `${fmt(total)}개 중 ${fmt(items.length)}개`;
+    el.gainHead.textContent = d.span ? `증가(${spanText(d.span)})` : '증가';
+    el.gainHead.dataset.tip = d.span
+      ? `최근 ${spanText(d.span)} 동안 늘어난 스타입니다. 서버가 쌓은 스냅샷과 비교합니다.`
+      : '서버가 이 기간을 10분 넘게 지켜본 뒤부터 표시됩니다.';
+
+    if (total === 0 && d.items.length > 0) {
+      return showEmpty('스팸으로 의심되는 저장소뿐입니다', '숨기기를 끄면 볼 수 있습니다.', { id: 'showspam', label: '스팸 의심도 보기' });
+    }
+    if (total === 0) return showEmpty('이 기간에 만들어진 저장소가 아직 없습니다', '');
+    if (items.length === 0) {
+      return showEmpty('조건에 맞는 저장소가 없습니다', '언어나 검색어를 바꿔 보세요.', { id: 'clear', label: '조건 지우기' });
+    }
+
+    const animate = live && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const before = new Map();
+    if (animate) {
+      for (const li of el.rows.children) {
+        before.set(li.dataset.id, { top: li.getBoundingClientRect().top, stars: li.dataset.stars });
+      }
+    }
+
+    const max = state.items[0].stars;
+    el.empty.hidden = true;
+    el.cols.hidden = false;
+    el.rows.innerHTML = items.map((r) => rowHtml(r, max, d)).join('');
+
+    if (!animate || before.size === 0) return;
+    const moves = [];
+    for (const li of el.rows.children) {
+      const old = before.get(li.dataset.id);
+      if (!old) {
+        li.classList.add('entered');
+        continue;
+      }
+      if (old.stars !== li.dataset.stars) li.classList.add('bumped');
+      const dy = old.top - li.getBoundingClientRect().top;
+      if (Math.abs(dy) > 1) moves.push([li, dy]);
+    }
+    // 순위가 바뀐 줄은 원래 자리에서 새 자리로 미끄러져 간다.
+    for (const [li, dy] of moves) {
+      li.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], {
+        duration: 480,
+        easing: 'cubic-bezier(.2,.7,.2,1)',
+      });
+    }
+  }
+
+  function renderNotice() {
+    const d = state.data;
+    const st = currentStatus();
+    let text = '';
+    if (state.view === 'ready' && d) {
+      if (st && st.error) {
+        text = `마지막 갱신에 실패했습니다(${st.error}). ${st.fetchedAt ? rel(st.fetchedAt) : '이전'} 데이터를 보여 주고 있으며, 자동으로 다시 시도합니다.`;
+      } else if (d.partial) {
+        text = '스팸으로 의심되는 저장소가 많아, 그만큼 아래 순위를 더 받아 오는 중입니다. 받는 대로 채워집니다.';
+      } else if (d.incomplete) {
+        text = 'GitHub 검색이 시간 안에 끝나지 않아 일부 저장소가 빠졌을 수 있습니다. 다음 갱신 때 다시 확인합니다.';
+      }
+    }
+    el.notice.hidden = !text;
+    el.notice.textContent = text ? `${d && d.partial && !(st && st.error) ? '…' : '⚠'} ${text}` : '';
+  }
+
+  // ── 그리기: 언어 ─────────────────────────────────────────────
+  function langStats() {
+    const map = new Map();
+    for (const r of state.items) {
+      const k = langOf(r);
+      const cur = map.get(k) || { lang: k, n: 0, stars: 0 };
+      cur.n += 1;
+      cur.stars += r.stars;
+      map.set(k, cur);
+    }
+    return [...map.values()].sort((a, b) => b.n - a.n || b.stars - a.stars);
+  }
+
+  function renderLangs() {
+    if (state.view !== 'ready' || !state.data || state.items.length === 0) {
+      el.langs.innerHTML = '';
+      el.lang.innerHTML = '<option value="">전체</option>';
+      el.lang.dataset.sig = '';
+      return;
+    }
+    const stats = langStats();
+    const total = state.items.length;
+
+    const sig = stats.map((s) => `${s.lang}:${s.n}`).join(',');
+    if (el.lang.dataset.sig !== sig) {
+      el.lang.dataset.sig = sig;
+      el.lang.innerHTML =
+        '<option value="">전체</option>' +
+        stats.map((s) => `<option value="${esc(s.lang)}">${esc(s.lang)} (${s.n})</option>`).join('');
+    }
+    // 고른 언어가 이 기간에 없으면 목록에 임시로 넣어 선택 상태를 유지한다.
+    if (state.lang && !stats.some((s) => s.lang === state.lang)) {
+      el.lang.insertAdjacentHTML('beforeend', `<option value="${esc(state.lang)}">${esc(state.lang)} (0)</option>`);
+      el.lang.dataset.sig = '';
+    }
+    el.lang.value = state.lang;
+
+    const top = stats.slice(0, 8);
+    const rest = stats.slice(8);
+    const max = top[0].n;
+    let html = top
+      .map((s) => {
+        const share = Math.round((s.n / total) * 100);
+        return `<button class="lang-row" type="button" data-lang="${esc(s.lang)}" aria-pressed="${s.lang === state.lang}" data-tip="${esc(s.lang)}&#10;저장소 ${s.n}개 (${share}%)&#10;스타 합계 ${fmt(s.stars)}" aria-label="${esc(s.lang)}, 저장소 ${s.n}개">
+          <span class="lang-name">${langDot(s.lang)}<span>${esc(s.lang)}</span></span>
+          <span class="lang-bar"><i style="width:${((s.n / max) * 100).toFixed(1)}%"></i></span>
+          <span class="lang-n">${s.n}</span>
+        </button>`;
+      })
+      .join('');
+    if (rest.length) {
+      const n = rest.reduce((sum, s) => sum + s.n, 0);
+      html += `<div class="lang-row" data-tip="${esc(rest.map((s) => `${s.lang} ${s.n}`).join(', '))}">
+        <span class="lang-name"><i class="lang-dot"></i><span>그 밖 ${rest.length}개 언어</span></span>
+        <span class="lang-bar"><i style="width:${((n / max) * 100).toFixed(1)}%;max-width:100%"></i></span>
+        <span class="lang-n">${n}</span>
+      </div>`;
+    }
+    el.langs.innerHTML = html;
+    el.langs.toggleAttribute('data-filtered', Boolean(state.lang));
+  }
+
+  // ── 그리기: 만들어진 시점 ─────────────────────────────────────
+  function buildBins(d) {
+    const today = Math.floor(now() / DAY) * DAY;
+    const from = Date.parse(d.from);
+    const end = d.to ? Math.min(Date.parse(d.to), today) : today;
+    const bins = [];
+    if (state.type === 'yearly') {
+      let y = new Date(from).getUTCFullYear();
+      let m = new Date(from).getUTCMonth();
+      const ey = new Date(end).getUTCFullYear();
+      const em = new Date(end).getUTCMonth();
+      while (y < ey || (y === ey && m <= em)) {
+        bins.push({ start: Date.UTC(y, m, 1), end: Date.UTC(y, m + 1, 1), short: `${y}.${pad(m + 1)}`, long: `${y}년 ${m + 1}월` });
+        m += 1;
+        if (m > 11) {
+          m = 0;
+          y += 1;
+        }
+      }
+    } else {
+      for (let t = from; t <= end; t += DAY) {
+        const dt = new Date(t);
+        bins.push({
+          start: t,
+          end: t + DAY,
+          short: `${pad(dt.getUTCMonth() + 1)}.${pad(dt.getUTCDate())}`,
+          long: `${dt.getUTCMonth() + 1}월 ${dt.getUTCDate()}일 (${WEEKDAYS[dt.getUTCDay()]})`,
+        });
+      }
+    }
+    for (const b of bins) {
+      b.n = 0;
+      b.top = null;
+    }
+    for (const r of state.items) {
+      const c = Date.parse(r.created);
+      const b = bins.find((x) => c >= x.start && c < x.end);
+      if (!b) continue;
+      b.n += 1;
+      if (!b.top) b.top = r; // items는 스타 내림차순이므로 처음 만난 것이 그 구간의 1위
+    }
+    return bins;
+  }
+
+  function niceStep(max) {
+    for (const s of [1, 2, 5, 10, 20, 25, 50, 100]) if (max / s <= 4) return s;
+    return 200;
+  }
+
+  function renderHist() {
+    const d = state.data;
+    if (state.view !== 'ready' || !d || state.items.length === 0) {
+      el.hist.innerHTML = '';
+      return;
+    }
+    const bins = buildBins(d);
+    if (bins.length === 0) {
+      el.hist.innerHTML = '';
+      return;
+    }
+    const W = Math.max(220, Math.round(el.hist.clientWidth));
+    const H = 150;
+    const m = { l: 24, r: 4, t: 8, b: 22 };
+    const iw = W - m.l - m.r;
+    const ih = H - m.t - m.b;
+    const maxN = Math.max(1, ...bins.map((b) => b.n));
+    const stepN = niceStep(maxN);
+    const top = Math.ceil(maxN / stepN) * stepN;
+    const y = (v) => m.t + ih - (v / top) * ih;
+    const slot = iw / bins.length;
+    const bw = Math.min(24, Math.max(2, slot - 2));
+
+    let svg = '';
+    for (let v = stepN; v <= top; v += stepN) {
+      svg += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/>`;
+      svg += `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+    }
+    svg += `<text x="${m.l - 6}" y="${y(0) + 4}" text-anchor="end">0</text>`;
+
+    bins.forEach((b, i) => {
+      const x = m.l + i * slot + (slot - bw) / 2;
+      const h = (b.n / top) * ih;
+      const r = Math.min(4, bw / 2, h);
+      const tip = b.n
+        ? `${b.long}&#10;순위에 든 저장소 ${b.n}개&#10;그중 1위 ${esc(b.top.name)} ★ ${fmt(b.top.stars)}`
+        : `${b.long}&#10;순위에 든 저장소 없음`;
+      // 위쪽(데이터 끝)만 둥글리고 기준선 쪽은 각지게 둔다.
+      const bar = b.n
+        ? `<path class="col-bar" d="M${x},${y(0)} V${y(0) - h + r} Q${x},${y(0) - h} ${x + r},${y(0) - h} H${x + bw - r} Q${x + bw},${y(0) - h} ${x + bw},${y(0) - h + r} V${y(0)} Z"/>`
+        : '';
+      svg += `<g class="col" data-tip="${tip}"><rect class="col-hit" x="${m.l + i * slot}" y="${m.t}" width="${slot}" height="${ih}"/>${bar}</g>`;
+    });
+    svg += `<line class="base" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>`;
+
+    // 가로축 이름표는 처음·끝(자리가 되면 가운데)만 단다.
+    const picks = bins.length > 2 && W >= 260 ? [0, Math.floor((bins.length - 1) / 2), bins.length - 1] : [0, bins.length - 1];
+    [...new Set(picks)].forEach((i, n, arr) => {
+      const cx = m.l + i * slot + slot / 2;
+      const anchor = n === 0 ? 'start' : n === arr.length - 1 ? 'end' : 'middle';
+      const x = n === 0 ? m.l : n === arr.length - 1 ? W - m.r : cx;
+      svg += `<text x="${x}" y="${H - 6}" text-anchor="${anchor}">${bins[i].short}</text>`;
+    });
+
+    const peak = bins.reduce((a, b) => (b.n > a.n ? b : a));
+    el.hist.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="생성 시점별 저장소 수. 가장 많은 구간은 ${peak.long}, ${peak.n}개">${svg}</svg>`;
+  }
+
+  // ── 그리기: 상태 ─────────────────────────────────────────────
+  /** 정적 사이트가 만들어지는 간격: "약 15분" */
+  function everText() {
+    const ms = (state.meta && state.meta.every) || 0;
+    return ms >= 3_600_000 ? `약 ${Math.round(ms / 3_600_000)}시간` : `약 ${Math.max(1, Math.round(ms / 60_000))}분`;
+  }
+
+  function renderLive() {
+    const st = currentStatus();
+    if (!state.live && state.meta) {
+      // 예약 실행이 한참 밀리거나 멈췄으면 알린다.
+      const m = state.meta;
+      const late = now() - m.builtAt > Math.max(3 * m.every, 3_600_000);
+      el.live.dataset.state = late ? 'off' : 'static';
+      el.liveText.textContent = late ? `${rel(m.builtAt)} 수집 뒤로 갱신이 없습니다` : `${everText()}마다 갱신, ${rel(m.builtAt)} 수집`;
+      return;
+    }
+    if (!state.connected) {
+      el.live.dataset.state = state.everConnected ? 'off' : 'connecting';
+      el.liveText.textContent = state.everConnected ? '연결이 끊겨 다시 붙는 중' : '서버에 연결하는 중';
+      return;
+    }
+    el.live.dataset.state = 'on';
+    el.liveText.textContent = st && st.fetchedAt ? `실시간 연결됨, ${rel(st.fetchedAt)} 확인` : '실시간 연결됨';
+  }
+
+  /** 정적 사이트의 수집 상태: 서버 한도 같은 것은 없고, 언제 만들어졌고 언제 다시 만들어지는지를 보여 준다. */
+  function renderStaticStatus() {
+    const st = currentStatus();
+    const m = state.meta;
+    const rows = [['마지막 수집', rel(m.builtAt)]];
+    rows.push(['이 기간 확인', st && st.fetchedAt ? rel(st.fetchedAt) : '아직 없음']);
+    if (st && st.dataAt) rows.push(['순위가 바뀐 때', rel(st.dataAt)]);
+    rows.push(['다음 수집', until(m.builtAt + m.every)]);
+    rows.push(['수집 방식', `GitHub Actions, ${everText()}마다`]);
+    let have = 0;
+    let all = 0;
+    for (const type of TYPES) {
+      for (const b of m.types[type]) {
+        all += 1;
+        if (b.hasData) have += 1;
+      }
+    }
+    rows.push(['준비된 기간', `${have} / ${all}`]);
+    el.status.innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+    el.refreshBtn.parentElement.hidden = true; // 정적 사이트에는 수동 갱신이 없다
+    renderLive();
+  }
+
+  function renderStatus() {
+    if (!state.live && state.meta) return renderStaticStatus();
+    const st = currentStatus();
+    const c = state.collector;
+    const rows = [];
+    rows.push(['마지막 확인', st && st.fetchedAt ? rel(st.fetchedAt) : '아직 없음']);
+    if (st && st.dataAt) rows.push(['순위가 바뀐 때', rel(st.dataAt)]);
+
+    let next = '이 기간을 다시 열 때';
+    if (st) {
+      if (st.state === 'running') next = '지금 받는 중';
+      else if (c && c.pauseUntil && (st.state === 'queued' || (st.nextAt && st.nextAt <= c.pauseUntil))) {
+        next = `한도가 풀리는 ${until(c.pauseUntil)}`;
+      } else if (st.state === 'queued') next = '차례를 기다리는 중';
+      else if (st.nextAt) next = until(st.nextAt);
+    }
+    rows.push(['다음 확인', next]);
+
+    if (c) {
+      const left = c.rate.remaining === null || c.rate.remaining === undefined ? '' : ` 중 ${c.rate.remaining}회 남음`;
+      rows.push(['GitHub 검색 한도', `분당 ${c.rate.limit}회${left}`]);
+      rows.push(['GitHub 인증', c.authenticated ? '토큰 사용' : '토큰 없음']);
+      rows.push(['미리 받아 둔 기간', `${c.eager - c.missing} / ${c.eager}`]);
+    }
+    el.status.innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+    el.refreshBtn.disabled = !st || st.state === 'running';
+    renderLive();
+  }
+
+  function spamRuleText() {
+    const rule = state.meta && state.meta.spam;
+    if (!rule) return '스타에 비해 포크가 거의 없는 저장소를 스팸으로 의심합니다.';
+    const pct = +(rule.maxForkRatio * 100).toFixed(2);
+    return `스타가 ${fmt(rule.minStars)}개 이상인데 포크가 스타의 ${pct}%에 못 미치는 저장소입니다(${rule.since.slice(0, 4)}년 이후 생성). 스타를 사들인 저장소가 주로 걸리지만, 어림 규칙이라 틀릴 수 있습니다.`;
+  }
+
+  function renderSpam() {
+    const n = spamCount();
+    el.spamToggle.checked = state.hideSpam;
+    el.spamCount.textContent = n ? fmt(n) : '';
+    el.spamCount.hidden = !n;
+    el.spamLabel.dataset.tip =
+      `${spamRuleText()}
+` +
+      (state.hideSpam
+        ? `숨긴 만큼 아래 순위를 더 받아 채웁니다${n ? `. 지금 ${fmt(n)}개를 건너뛰었습니다` : ''}.`
+        : `지금 순위표에 ${fmt(n)}개가 섞여 있습니다.`);
+  }
+
+  function renderAll(opts = {}) {
+    state.items = chartItems();
+    renderSpam();
+    renderNav();
+    renderSub();
+    renderLangs();
+    renderBoard(opts);
+    renderNotice();
+    renderHist();
+    renderStatus();
+  }
+
+  // ── 조작 ─────────────────────────────────────────────────────
+  function setLang(lang) {
+    state.lang = lang;
+    if (state.view !== 'ready') return;
+    renderLangs();
+    renderBoard();
+  }
+
+  el.types.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-type]');
+    if (b) go(b.dataset.type, 'rolling');
+  });
+  el.period.addEventListener('change', () => go(state.type, el.period.value));
+  el.prev.addEventListener('click', () => step(1));
+  el.next.addEventListener('click', () => step(-1));
+
+  el.seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-sort]');
+    if (!b) return;
+    state.sort = b.dataset.sort;
+    for (const x of el.seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
+    if (state.view === 'ready') renderBoard();
+  });
+  function setHideSpam(on) {
+    state.hideSpam = on;
+    try {
+      localStorage.setItem('hideSpam', on ? '1' : '0');
+    } catch {
+      /* 저장이 막혀 있어도 이번 화면에는 적용된다 */
+    }
+    renderAll();
+  }
+  el.spamToggle.addEventListener('change', () => setHideSpam(el.spamToggle.checked));
+  el.lang.addEventListener('change', () => setLang(el.lang.value));
+  el.search.addEventListener('input', () => {
+    state.q = el.search.value.trim();
+    if (state.view === 'ready') renderBoard();
+  });
+  el.langs.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-lang]');
+    if (b) setLang(b.dataset.lang === state.lang ? '' : b.dataset.lang);
+  });
+  el.empty.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-action]');
+    if (!b) return;
+    if (b.dataset.action === 'home') go('weekly', 'rolling');
+    if (b.dataset.action === 'showspam') setHideSpam(false);
+    if (b.dataset.action === 'clear') {
+      state.q = '';
+      el.search.value = '';
+      setLang('');
+    }
+  });
+
+  let msgTimer = 0;
+  el.refreshBtn.addEventListener('click', async () => {
+    let text;
+    try {
+      const res = await fetch(`api/refresh?type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
+      const body = await res.json();
+      if (res.ok) text = '갱신을 요청했습니다';
+      else if (body.reason === 'cooldown') text = `방금 확인했습니다. ${Math.ceil(body.retryInMs / 1000)}초 뒤에 다시 누를 수 있습니다`;
+      else text = '이 기간은 갱신할 수 없습니다';
+    } catch {
+      text = '서버에 연결하지 못했습니다';
+    }
+    el.refreshMsg.textContent = text;
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(() => (el.refreshMsg.textContent = ''), 5000);
+  });
+
+  el.themeBtn.addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try {
+      localStorage.setItem('theme', root.dataset.theme);
+    } catch {
+      /* 저장이 막혀 있어도 이번 화면에는 적용된다 */
+    }
+  });
+
+  // 말풍선: data-tip이 달린 요소 위에 올리거나 초점을 주면 뜬다.
+  function showTip(target, x, y) {
+    el.tip.textContent = target.dataset.tip;
+    el.tip.hidden = false;
+    const box = el.tip.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - box.width - 8, Math.max(8, x + 12));
+    const top = y + 16 + box.height > window.innerHeight ? y - box.height - 10 : y + 16;
+    el.tip.style.left = `${left}px`;
+    el.tip.style.top = `${Math.max(8, top)}px`;
+  }
+  document.addEventListener('pointermove', (e) => {
+    const target = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (target) showTip(target, e.clientX, e.clientY);
+    else el.tip.hidden = true;
+  });
+  document.documentElement.addEventListener('pointerleave', () => (el.tip.hidden = true));
+  document.addEventListener('focusin', (e) => {
+    const target = e.target.closest ? e.target.closest('[data-tip]') : null;
+    if (!target) return;
+    const box = target.getBoundingClientRect();
+    showTip(target, box.left + box.width / 2, box.bottom - 8);
+  });
+  document.addEventListener('focusout', () => (el.tip.hidden = true));
+  window.addEventListener('scroll', () => (el.tip.hidden = true), { passive: true });
+
+  let histFrame = 0;
+  new ResizeObserver(() => {
+    cancelAnimationFrame(histFrame);
+    histFrame = requestAnimationFrame(renderHist);
+  }).observe(el.hist);
+
+  window.addEventListener('hashchange', () => {
+    readHash();
+    renderNav();
+    renderSub();
+    loadChart();
+  });
+
+  // 1초마다 "N초 전", 남은 시간 같은 상대 시각만 새로 쓴다.
+  let metaCheckAt = 0;
+  setInterval(() => {
+    renderStatus();
+    if (el.notice.hidden === false) renderNotice();
+    // 화면을 켜 둔 채 날짜(UTC)가 넘어가면 기간 목록을 새로 받는다(새 주·새 달이 생긴다).
+    // (정적 사이트는 poll이 새 판을 받아 오면서 목록도 함께 바뀐다.)
+    if (state.live && state.meta && Math.floor(now() / DAY) !== state.metaDay && Date.now() - metaCheckAt > 30_000) {
+      metaCheckAt = Date.now();
+      fetchMeta().then(applyMeta, () => {});
+    }
+  }, 1000);
+
+  // ── 시작 ─────────────────────────────────────────────────────
+  try {
+    state.hideSpam = localStorage.getItem('hideSpam') !== '0';
+  } catch {
+    /* 저장소를 못 읽으면 기본값(숨김)으로 둔다 */
+  }
+  readHash();
+  renderAll();
+
+  // 기간 목록을 먼저 받아 어느 방식인지 안 다음, 실시간 연결을 맺거나(서버) 주기적으로 확인한다(정적 사이트).
+  function boot() {
+    fetchMeta().then(
+      (meta) => {
+        applyMeta(meta);
+        loadChart();
+        if (state.live) {
+          connect();
+        } else {
+          setInterval(poll, 60_000);
+          document.addEventListener('visibilitychange', poll); // 탭으로 돌아오면 바로 확인한다
+        }
+      },
+      () => {
+        state.view = 'offline';
+        renderAll();
+        setTimeout(boot, 5000);
+      },
+    );
+  }
+  boot();
+})();
