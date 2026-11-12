@@ -650,6 +650,15 @@ a {
   font-size: 17.5px;
 }
 
+/* 글 제목(Hacker News)은 문장이라 한 줄에서 자르지 않고 두 줄까지 보여 준다 */
+:root[data-src="hn"] .name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+
 .desc {
   display: -webkit-box;
   overflow: hidden;
@@ -679,6 +688,19 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+/* 곁들임 정보 안의 링크(Hacker News 토론으로 가기) */
+.meta-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 2px;
+}
+
+.meta-link:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
 .flag {
@@ -1040,6 +1062,18 @@ button.lang-row:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* 출처 탭이 여럿이라 가로를 꽉 채워 나누고, 그래도 모자라면 줄을 바꾼다 */
+  .sources {
+    justify-self: stretch;
+    flex-wrap: wrap;
+  }
+
+  .sources button {
+    flex: 1 1 auto;
+    padding-inline: 8px;
+    font-size: 13px;
   }
 
   .count {

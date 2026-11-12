@@ -1,7 +1,7 @@
 'use strict';
 
 // 로컬 서버 방식: 백그라운드 수집기를 돌리면서 화면에 실시간으로 밀어 준다.
-// 화면이 읽는 주소(data/meta.json, data/<type>.<key>.json, data/hf/<type>.<key>.json)는 정적 사이트 빌드
+// 화면이 읽는 주소(data/meta.json, data/<type>.<key>.json, data/<출처>/<type>.<key>.json)는 정적 사이트 빌드
 // (lib/build.js)가 써 내는 파일과 같아서, 같은 화면 코드가 두 방식 모두에서 돈다. 서버 방식에만 있는 것은
 // 실시간 스트림(api/events)과 수동 갱신(api/refresh)이다.
 
@@ -9,6 +9,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const registry = require('./lib/sources');
 
 const PUBLIC = path.join(__dirname, 'public');
 const STATIC = {
@@ -18,21 +19,19 @@ const STATIC = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
 };
-// data/<종류>.<키>.json (GitHub), data/hf/…, data/as/… 종류와 키가 실제로 있는지는 수집기가 판단한다.
-const CHART_PATH = /^\/data\/(?:(hf|as)\/)?([a-z]+)\.([\w-]+)\.json$/;
+// data/<종류>.<키>.json (GitHub), data/<출처>/<종류>.<키>.json (hf, hn, as …). 종류와 키가 실제로 있는지는 수집기가 판단한다.
+const CHART_PATH = new RegExp(`^/data/(?:(${registry.NAMES.join('|')})/)?([a-z]+)\\.([\\w-]+)\\.json$`);
 
 /**
  * HTTP 서버를 만든다(아직 듣지는 않는다).
  * @param {object} o
  * @param {object} o.store, o.collector GitHub 쪽 저장소와 수집기
- * @param {{store: object, collector: object}} [o.hf] Hugging Face 쪽(없으면 그 탭 없이 돈다)
- * @param {{store: object, collector: object}} [o.as] App Store 쪽(없으면 그 탭 없이 돈다)
+ * @param {Object<string, {store: object, collector: object}>} [o.extra] 덧붙는 출처(lib/sources.js의 이름 → 저장소와 수집기).
+ *   여기에 없는 출처는 그 탭 없이 돈다
  */
-function createApp({ store, collector, hf = null, as = null }) {
-  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh', Hugging Face를 'hf', App Store를 'as'로 부른다.
-  const sources = { gh: { store, collector } };
-  if (hf) sources.hf = hf;
-  if (as) sources.as = as;
+function createApp({ store, collector, extra = {} }) {
+  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh'로, 나머지는 lib/sources.js의 이름(hf, hn, as)으로 부른다.
+  const sources = { gh: { store, collector }, ...extra };
 
   // ── 실시간 푸시(SSE) ─────────────────────────────────────────────
   const clients = new Set();
@@ -218,21 +217,13 @@ function main() {
   const cached = store.load();
   const collector = new Collector({ cfg, store });
 
-  let hf = null;
-  if (cfg.hf) {
-    const { HfCollector, storeConfig } = require('./lib/hfcollector');
-    const hfStore = new Store(storeConfig(cfg));
-    hfStore.load();
-    hf = { store: hfStore, collector: new HfCollector({ cfg, store: hfStore }) };
+  // 덧붙는 출처(설정에서 켜 둔 것만): 캐시를 불러온 뒤 수집기를 만든다.
+  const extra = {};
+  for (const [name, s] of Object.entries(registry.create(cfg))) {
+    s.store.load();
+    extra[name] = { store: s.store, collector: s.make() };
   }
-  let as = null;
-  if (cfg.as) {
-    const { AsCollector, storeConfig } = require('./lib/ascollector');
-    const asStore = new Store(storeConfig(cfg));
-    asStore.load();
-    as = { store: asStore, collector: new AsCollector({ cfg, store: asStore }) };
-  }
-  const { server, close } = createApp({ store, collector, hf, as });
+  const { server, close } = createApp({ store, collector, extra });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -245,8 +236,7 @@ function main() {
 
   server.listen(cfg.port, cfg.host, () => {
     collector.start();
-    if (hf) hf.collector.start();
-    if (as) as.collector.start();
+    for (const x of Object.values(extra)) x.collector.start();
     const s = collector.status();
     console.log(`GitHub 베스트 대시보드  http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}`);
     console.log(`  캐시에서 불러온 기간 ${cached}개, 새로 받을 기간 ${s.missing}개`);
@@ -256,8 +246,7 @@ function main() {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
       collector.stop();
-      if (hf) hf.collector.stop();
-      if (as) as.collector.stop();
+      for (const x of Object.values(extra)) x.collector.stop();
       close();
       setTimeout(() => process.exit(0), 500).unref();
     });

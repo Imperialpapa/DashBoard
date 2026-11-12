@@ -57,6 +57,15 @@ module.exports = {
     refresh: 30 * MIN, // 로컬 서버가 다시 훑는 간격(정적 사이트는 빌드할 때마다 한 번)
   },
 
+  // Hacker News 탭(lib/hn.js, lib/hncollector.js): 기간마다 그때 올라온 글을 점수순으로 검색한다. 토큰이 필요 없다.
+  // 이 항목을 지우면(null) Hacker News 탭 없이 돈다.
+  hn: {
+    firstYear: 2007, // 연간 목록의 시작(Hacker News는 2006년 10월에 열렸다)
+    listed: { weekly: 26, monthly: 36 }, // 기간 목록에 노출할 과거 구간 수(모두 미리 받는다)
+    concurrency: 4, // 동시에 보내는 검색 수
+    refresh: 30 * MIN, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때마다 한 번). 끝난 기간은 위 refresh의 주기로만 다시 확인한다
+  },
+
   // App Store 탭(lib/appstore.js, lib/ascollector.js): 인기 차트를 종합과 카테고리별로 100위까지 받는다.
   // 이 항목을 지우면(null) App Store 탭 없이 돈다.
   as: {

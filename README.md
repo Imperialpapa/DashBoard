@@ -1,10 +1,10 @@
-# GitHub · Hugging Face · App Store 베스트
+# GitHub · Hugging Face · Hacker News · App Store 베스트
 
-기간별로 새로 만들어진 GitHub 공개 저장소를 스타순으로, Hugging Face 공개 모델을 좋아요순으로, 그리고 한국 App Store 인기 차트를 보여 주는 대시보드입니다. 화면 위쪽 탭으로 셋을 오갑니다. GitHub과 Hugging Face는 주간·월간·연간 단위로 "최근 7일" 같은 이동 구간과 지난 주·달·해를 골라 보고, App Store는 무료·유료·최고 매출 차트를 카테고리별로 골라 봅니다.
+기간별로 새로 만들어진 GitHub 공개 저장소를 스타순으로, Hugging Face 공개 모델을 좋아요순으로, Hacker News에 올라온 글을 점수순으로, 그리고 한국 App Store 인기 차트를 보여 주는 대시보드입니다. 화면 위쪽 탭으로 넷을 오갑니다. GitHub·Hugging Face·Hacker News는 주간·월간·연간 단위로 "최근 7일" 같은 이동 구간과 지난 주·달·해를 골라 보고, App Store는 무료·유료·최고 매출 차트를 카테고리별로 골라 봅니다.
 
 **보기: <https://imperialpapa.github.io/DashBoard/>**
 
-서버 없이 돌아갑니다. GitHub Actions가 하루 두 번(한국 시간 9시와 21시 무렵) GitHub 검색 API, Hugging Face 모델 목록 API, 애플의 공개 차트 피드로 순위를 받아 JSON으로 만들고, GitHub Pages가 그 파일과 화면을 정적으로 내보냅니다. 열어 둔 화면은 다음 수집 예정 시각이 지난 뒤에만 새 판이 나왔는지 확인합니다(그때부터 10분 간격).
+서버 없이 돌아갑니다. GitHub Actions가 하루 두 번(한국 시간 9시와 21시 무렵) GitHub 검색 API, Hugging Face 모델 목록 API, Hacker News 검색 API, 애플의 공개 차트 피드로 순위를 받아 JSON으로 만들고, GitHub Pages가 그 파일과 화면을 정적으로 내보냅니다. 열어 둔 화면은 다음 수집 예정 시각이 지난 뒤에만 새 판이 나왔는지 확인합니다(그때부터 10분 간격).
 
 ## 돌아가는 방식
 
@@ -45,6 +45,17 @@ Hugging Face API에는 "이 기간에 만들어진 것만" 거르는 조건이 �
 - 포크가 없어 스팸 의심 규칙은 적용하지 않습니다. 대신 작업 종류, 라이브러리, 최근 30일 다운로드 수를 보여 줍니다.
 - Hugging Face 수집이 실패해도 GitHub 순위는 그대로 배포되고, Hugging Face 탭은 지난번 순위를 실패 표시와 함께 보여 줍니다.
 
+### Hacker News 탭
+
+Hacker News 검색 API(Algolia 제공)는 올라온 시각으로 범위를 걸면 점수 내림차순으로 돌려줍니다. 그래서 GitHub 탭과 같은 방식으로, 기간마다 한 번 검색한 상위 100개가 그 기간의 순위입니다.
+
+- 토큰이 필요 없고 한도가 넉넉해, 기간 87개를 몇 개씩 동시에 받습니다. 처음에는 10초 남짓, 그 뒤로는 진행 중인 기간(최근 7일·이번 주 등 6개)과 다시 확인할 때가 된 지난 기간만 받습니다.
+- 연간은 2007년부터 있습니다. 채용 공고와 설문은 빠집니다.
+- 제목은 원문으로, "댓글"은 Hacker News의 토론으로 이어집니다. 본문만 있는 글(Ask HN 등)은 제목도 토론으로 갑니다.
+- 언어 자리에는 원문 사이트(도메인)를 보여 주고, 그것으로 거르거나 찾을 수 있습니다.
+- "그 기간에 올라온 글 N개 가운데"의 N은 API가 정확히 세어 준 때만 적습니다. 글이 많은 기간은 어림값만 오는데 실제와 차이가 커서 쓰지 않습니다.
+- 일부 기간만 받지 못하면 그 기간만 지난번 순위를 두고 표시를 남깁니다.
+
 ### App Store 탭
 
 애플은 "이 기간에 나온 앱을 인기순으로" 주는 목록을 제공하지 않습니다. 대신 인기 차트(무료·유료·최고 매출)를 종합과 카테고리별로 100위까지 공개 피드로 줍니다. 그래서 이 탭은 기간이 아니라 차트 종류와 카테고리를 고르는 방식이고, 순위는 애플이 매긴 차트 순서 그대로입니다.
@@ -79,7 +90,7 @@ npm test         # 로직 시험(바깥 API를 부르지 않는다)
 | `SEED_URL` | 없음 | 빌드가 수집 상태를 이어받을 배포본 주소(Actions가 넣어 줍니다) |
 | `BUDGET_SEC` | 540 | 빌드 한 번이 수집에 쓰는 시간 상한(초) |
 
-갱신 주기, 기간 목록 길이, 스팸 의심 기준 같은 값은 `config.js`에서 바꿉니다. Hugging Face 탭이나 App Store 탭을 빼려면 `config.js`의 `hf`, `as`를 `null`로 둡니다. 수집 시각을 바꾸려면 워크플로의 `cron`(UTC)과 `config.js`의 `static.every`·`static.at`을 함께 바꿉니다.
+갱신 주기, 기간 목록 길이, 스팸 의심 기준 같은 값은 `config.js`에서 바꿉니다. Hugging Face, Hacker News, App Store 탭을 빼려면 `config.js`의 `hf`, `hn`, `as`를 `null`로 둡니다. 수집 시각을 바꾸려면 워크플로의 `cron`(UTC)과 `config.js`의 `static.every`·`static.at`을 함께 바꿉니다.
 
 ## 구조
 
@@ -88,13 +99,16 @@ npm test         # 로직 시험(바깥 API를 부르지 않는다)
 scripts/build.js             정적 사이트 빌드 실행
 lib/build.js                 빌드: 지난 배포본에서 상태 이어받기, 수집, 파일 쓰기
 lib/collector.js             GitHub 수집기: 우선순위, 한도 관리, 백오프
+lib/sources.js               GitHub 말고 덧붙는 출처 목록(hf, hn, as): 서버와 빌드가 이것으로 수집기를 만든다
 lib/sweep.js                 한 번 훑어 모든 목록을 갱신하는 수집기의 공통 뼈대
 lib/hfcollector.js           Hugging Face 수집기: 좋아요순 목록을 훑어 기간에 나눠 담기
+lib/hncollector.js           Hacker News 수집기: 기간마다 점수순으로 검색
 lib/ascollector.js           App Store 수집기: 차트 피드를 받고 평가 수를 묶어 조회
 lib/store.js                 순위 캐시, 증가·순위 변동 계산
 lib/periods.js               기간(버킷) 정의와 갱신 주기
 lib/github.js                GitHub 검색 API 호출
 lib/hf.js                    Hugging Face 모델 목록 API 호출
+lib/hn.js                    Hacker News 검색 API 호출
 lib/appstore.js              App Store 차트 피드와 조회 API 호출
 lib/spam.js                  스팸 의심 판정
 public/                      화면(HTML·CSS·JS, 빌드 과정 없음)

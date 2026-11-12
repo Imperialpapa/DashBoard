@@ -7,15 +7,19 @@
   const COUNTRIES = { kr: '한국', us: '미국', jp: '일본', cn: '중국', gb: '영국', de: '독일', fr: '프랑스' };
 
   // 출처(탭)별 낱말과 문구. 화면 구조와 데이터 모양은 같고 부르는 이름만 다르다.
-  // 항목의 stars에는 스타(GitHub), 좋아요(Hugging Face), 평가 수(App Store)가 들어 있다.
+  // 항목의 stars에는 스타(GitHub), 좋아요(Hugging Face), 점수(Hacker News), 평가 수(App Store)가 들어 있다.
   //   dir: 순위 파일이 놓인 곳(data/ 아래)     types: 위쪽 탭 [주소에 쓰는 이름, 보이는 이름]
   //   home: 기본으로 여는 [종류, 키]            bucket: 고르는 단위를 부르는 말(기간 / 차트)
-  //   facet: 언어 자리에 보여 주는 분류         made: 날짜를 부르는 말(생성 / 출시)
-  // GitHub·Hugging Face는 "그 기간에 새로 만들어진 것"의 순위이고, App Store는 애플이 낸 인기 차트 그대로다.
+  //   facet: 언어 자리에 보여 주는 분류         made: 날짜를 부르는 말(생성 / 등록 / 출시)
+  //   pool, order: 기간 설명에 쓰는 말("… 만들어진 공개 저장소 가운데 스타가 많은 순으로 …")
+  //   plainName: 이름이 "주인/이름" 꼴이 아니다(제목이나 앱 이름이라 /로 나누지 않는다)
+  //   pending: 서버 방식에서 아직 받는 중일 때의 안내 [제목, 본문]
+  // GitHub·Hugging Face·Hacker News는 "그 기간에 새로 나온 것"의 순위이고, App Store는 애플이 낸 인기 차트 그대로다.
   const SOURCES = {
     gh: {
       name: 'GitHub', title: 'GitHub 베스트', dir: '', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '저장소', score: '스타', mark: '★', facet: '언어', noFacet: '언어 표시 없음', made: '생성',
+      pool: '만들어진 공개 저장소', order: '스타가 많은 순',
       rankSort: '스타순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
       searchHint: '저장소 이름이나 설명으로 찾기',
       histHint: '순위에 든 저장소가 언제 만들어졌는지 보여 줍니다.',
@@ -30,15 +34,33 @@
     hf: {
       name: 'Hugging Face', title: 'Hugging Face 베스트', dir: 'hf/', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '모델', score: '좋아요', mark: '♥', facet: '작업', noFacet: '작업 표시 없음', made: '생성',
+      pool: '만들어진 공개 모델', order: '좋아요가 많은 순',
       rankSort: '좋아요순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
       searchHint: '모델 이름으로 찾기',
       histHint: '순위에 든 모델이 언제 만들어졌는지 보여 줍니다.',
       none: '이 기간에 만들어진 모델을 아직 찾지 못했습니다',
       noMatch: ['조건에 맞는 모델이 없습니다', '작업 종류나 검색어를 바꿔 보세요.'],
+      pending: ['이 기간의 순위를 받아 오는 중입니다', 'Hugging Face 모델 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.'],
       foot: [
         '순위는 해당 기간(UTC 기준)에 새로 만들어진 Hugging Face 공개 모델을 좋아요 수로 줄 세운 상위 100개입니다. 기간 안에 만들어진 모델만 다루므로 좋아요 수가 곧 그 기간에 받은 좋아요입니다. 좋아요가 아주 적은 모델까지는 훑지 않아서, 막 시작한 기간은 100개가 안 될 수 있습니다.',
         '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. 다운로드는 최근 30일 동안의 횟수입니다.',
         '2022년 3월 이전에 만든 모델은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.',
+      ],
+    },
+    hn: {
+      name: 'Hacker News', title: 'Hacker News 베스트', dir: 'hn/', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+      bucket: '기간', unit: '글', score: '점수', scoreUnit: '점', mark: '▲', facet: '사이트', noFacet: '사이트 없음', made: '등록',
+      pool: '올라온 글', order: '점수가 높은 순', plainName: true, searchFacet: true,
+      rankSort: '점수순', gainSort: '최근 증가순', histTitle: '올라온 시점',
+      searchHint: '제목, 사이트, 올린 사람으로 찾기',
+      histHint: '순위에 든 글이 언제 올라왔는지 보여 줍니다.',
+      none: '이 기간에 올라온 글이 아직 없습니다',
+      noMatch: ['조건에 맞는 글이 없습니다', '사이트나 검색어를 바꿔 보세요.'],
+      pending: ['이 기간의 순위를 받아 오는 중입니다', 'Hacker News 검색으로 기간마다 상위 글을 받고 있습니다. 끝나는 즉시 여기에 나타납니다.'],
+      foot: [
+        '순위는 해당 기간(UTC 기준)에 Hacker News에 올라온 글을 점수로 줄 세운 상위 100개입니다. 기간 안에 올라온 글만 다루므로 점수가 곧 그 글이 받은 점수입니다. 채용 공고와 설문은 빠집니다.',
+        '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. 제목을 누르면 원문으로, "댓글"을 누르면 Hacker News의 토론으로 갑니다.',
+        '순위와 점수는 Algolia가 제공하는 Hacker News 검색 API에서 받습니다. 오래된 글의 원문 주소는 사라졌을 수 있습니다.',
       ],
     },
     as: {
@@ -46,11 +68,13 @@
       typeNames: { free: '무료 앱', paid: '유료 앱', grossing: '최고 매출' },
       home: ['free', 'all'], homeLabel: '무료 종합 차트 보기',
       bucket: '차트', unit: '앱', score: '평가', mark: '평가', facet: '카테고리', noFacet: '카테고리 없음', made: '출시',
+      plainName: true,
       rankSort: '차트순', gainSort: '평가 증가순', histTitle: '출시 시점',
       searchHint: '앱 이름이나 개발사로 찾기',
       histHint: '차트에 오른 앱이 언제 출시됐는지 보여 줍니다.',
       none: '이 차트에 오른 앱이 없습니다',
       noMatch: ['조건에 맞는 앱이 없습니다', '출시 시기나 카테고리, 검색어를 바꿔 보세요.'],
+      pending: ['이 차트를 받아 오는 중입니다', 'App Store 차트와 앱마다의 평가 수를 받고 있습니다. 몇 분 걸리며, 끝나는 즉시 여기에 나타납니다.'],
       // {country}는 어느 나라 스토어인지로 바뀐다.
       foot: [
         '{country} App Store의 인기 차트(무료·유료·최고 매출)를 종합과 카테고리별로 100위까지 보여 줍니다. 순위는 애플이 낸 차트 순서 그대로입니다.',
@@ -91,7 +115,7 @@
   };
 
   const state = {
-    src: 'gh', // 출처(탭): gh | hf | as
+    src: 'gh', // 출처(탭): SOURCES의 이름(gh, hf, hn, as)
     type: 'weekly',
     key: 'rolling',
     sort: 'rank',
@@ -226,9 +250,11 @@
     return `<i class="lang-dot"${color ? ` style="background:${color}"` : ''}></i>`;
   }
 
-  // ── 주소(#weekly/rolling, #hf/weekly/rolling, #as/free/all) ────
+  // ── 주소(#weekly/rolling, #hf/weekly/rolling, #hn/weekly/rolling, #as/free/all) ────
+  // GitHub은 앞머리 없이, 나머지 출처는 그 이름을 앞에 붙인다.
+  const HASH = new RegExp(`^#(?:(${Object.keys(SOURCES).filter((src) => src !== 'gh').join('|')})/)?([a-z]+)/([\\w-]+)$`);
   function readHash() {
-    const m = /^#(?:(hf|as)\/)?([a-z]+)\/([\w-]+)$/.exec(location.hash);
+    const m = HASH.exec(location.hash);
     state.src = m && m[1] ? m[1] : 'gh';
     const s = S();
     const known = Boolean(m) && s.types.some(([t]) => t === m[2]); // 그 출처에 있는 종류인지
@@ -510,7 +536,7 @@
     // cut: 순위표가 다 차지 않았고, 이 수보다 적은 것은 아직 훑지 못했다(Hugging Face).
     const cut = d.cut && state.items.length < (d.top || 100) ? ` (${s.score} ${fmt(d.cut)}개 이상까지만 훑었습니다)` : '';
     el.sub.textContent =
-      `${when} 만들어진 공개 ${s.unit}${total} 가운데 ${s.score}가 많은 순으로 ${state.items.length}개` +
+      `${when} ${s.pool}${total} 가운데 ${s.order}으로 ${state.items.length}개` +
       (skipped ? ` (스팸 의심 ${fmt(skipped)}개 제외)` : '') +
       cut;
   }
@@ -526,7 +552,14 @@
     }
     if (state.q) {
       const q = state.q.toLowerCase();
-      items = items.filter((r) => r.name.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q) || (r.owner || '').toLowerCase().includes(q));
+      const facet = S().searchFacet; // 분류(사이트 이름)로도 찾을 수 있는 출처
+      items = items.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.desc.toLowerCase().includes(q) ||
+          (r.owner || '').toLowerCase().includes(q) ||
+          (facet && (r.lang || '').toLowerCase().includes(q)),
+      );
     }
     if (state.sort === 'gain') {
       items = [...items].sort((a, b) => (b.gain ?? -Infinity) - (a.gain ?? -Infinity) || a.rank - b.rank);
@@ -556,26 +589,35 @@
   const paceText = (v) => (v < 10 ? String(Math.round(v * 10) / 10) : fmt(Math.round(v)));
 
   function rowHtml(r, max, d) {
+    const s = S();
     const hf = state.src === 'hf';
+    const hn = state.src === 'hn';
     const as = state.src === 'as';
-    // 저장소·모델은 "주인/이름"이고, 앱 이름에는 주인이 붙지 않는다(이름에 /가 들어 있어도 나누지 않는다).
-    const slash = as ? -1 : r.name.indexOf('/');
+    // 저장소·모델은 "주인/이름"이고, 글 제목과 앱 이름에는 주인이 붙지 않는다(이름에 /가 들어 있어도 나누지 않는다).
+    const slash = s.plainName ? -1 : r.name.indexOf('/');
     const owner = slash < 0 ? '' : r.name.slice(0, slash + 1);
     const repo = slash < 0 ? r.name : r.name.slice(slash + 1);
-    const url = r.url.startsWith('https://') ? r.url : '#';
+    // 링크는 https만 건다. Hacker News의 오래된 글은 원문이 http인 것이 많아 그것까지 허용한다.
+    const url = r.url.startsWith('https://') || (hn && r.url.startsWith('http://')) ? r.url : '#';
     let avatar = r.avatar && r.avatar.startsWith('https://') ? r.avatar : '';
     if (avatar && state.src === 'gh') avatar += `${avatar.includes('?') ? '&' : '?'}s=72`; // GitHub 프로필 사진 크기 지정
     const pct = max ? Math.max(0.5, (r.stars / max) * 100) : 0;
     const share = max ? Math.round((r.stars / max) * 100) : 0;
-    const s = S();
-    // 출처마다 다른 곁들임 정보: GitHub은 포크 수, Hugging Face는 라이브러리와 다운로드 수(프로필 사진은 목록 API에 없어
-    // 머리글자로 대신한다), App Store는 개발사와 가격.
+    // 출처마다 다른 곁들임 정보: GitHub은 포크 수, Hugging Face는 라이브러리와 다운로드 수, Hacker News는 올린 사람과
+    // 토론으로 가는 링크, App Store는 개발사와 가격. 사진이 없는 출처는 머리글자로 대신한다
+    // (Hugging Face는 주인 이름, Hacker News는 원문 사이트의 첫 글자).
+    const letter = hf ? (owner || repo).charAt(0) : hn ? (r.lang || '').charAt(0) : '';
     const face = avatar
       ? `<img class="avatar" src="${esc(avatar)}" alt="" width="36" height="36" loading="lazy" decoding="async">`
-      : `<span class="avatar${hf ? ' avatar-txt' : ''}" aria-hidden="true">${hf ? esc((owner || repo).charAt(0).toUpperCase()) : ''}</span>`;
+      : `<span class="avatar${letter ? ' avatar-txt' : ''}" aria-hidden="true">${esc(letter.toUpperCase())}</span>`;
     let extra;
     if (hf) extra = `${r.lib ? `<span>${esc(r.lib)}</span>` : ''}<span data-tip="최근 30일 동안의 다운로드 횟수">다운로드 ${fmt(r.downloads || 0)}</span>`;
-    else if (as) extra = `${r.owner ? `<span>${esc(r.owner)}</span>` : ''}${r.price ? `<span>${esc(r.price)}</span>` : ''}`;
+    else if (hn) {
+      const talk = r.hn && r.hn.startsWith('https://news.ycombinator.com/') ? r.hn : '#';
+      extra =
+        `${r.owner ? `<span>${esc(r.owner)}</span>` : ''}` +
+        `<a class="meta-link" href="${esc(talk)}" target="_blank" rel="noopener" data-tip="Hacker News의 토론 보기">댓글 ${fmt(r.comments || 0)}</a>`;
+    } else if (as) extra = `${r.owner ? `<span>${esc(r.owner)}</span>` : ''}${r.price ? `<span>${esc(r.price)}</span>` : ''}`;
     else extra = `<span>포크 ${fmt(r.forks)}</span>`;
     // 크기 칸: 스타·좋아요는 1위 대비 막대로, 평가 수는 앱마다 수백만 배씩 차이 나 막대가 무의미하므로 별점을 대신 적는다.
     const gauge = as
@@ -583,7 +625,7 @@
       : `<span class="bar"><i style="width:${pct.toFixed(2)}%"></i></span>`;
     const scoreTip = as
       ? `평가 ${fmt(r.stars)}개${r.rating ? `&#10;별점 ${r.rating.toFixed(1)}` : ''}&#10;${esc(countryName())} 스토어 기준`
-      : `${s.score} ${fmt(r.stars)}개&#10;이 기간 1위의 ${share}%`;
+      : `${s.score} ${fmt(r.stars)}${s.scoreUnit || '개'}&#10;이 기간 1위의 ${share}%`;
     const when = r.created ? `<span>${ageText(r.created, s.made)}</span>` : '';
     const perDay = r.created ? `<span>하루 평균 ${s.mark} ${paceText(pace(r, d.dataAt))}</span>` : '';
     return `<li class="row" data-id="${esc(r.id)}" data-stars="${r.stars}"${r.rank <= 3 ? ' data-top' : ''}>
@@ -627,8 +669,7 @@
         const c = collector();
         const limit = c && c.rate.limit ? c.rate.limit : 10;
         if (!state.live) showEmpty(`아직 받아 오지 못한 ${S().bucket}입니다`, `다음 수집 때 채워집니다(${everText()}마다).`);
-        else if (state.src === 'hf') showEmpty('이 기간의 순위를 받아 오는 중입니다', 'Hugging Face 모델 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.');
-        else if (state.src === 'as') showEmpty('이 차트를 받아 오는 중입니다', 'App Store 차트와 앱마다의 평가 수를 받고 있습니다. 몇 분 걸리며, 끝나는 즉시 여기에 나타납니다.');
+        else if (S().pending) showEmpty(S().pending[0], S().pending[1]);
         else showEmpty('이 기간의 순위를 받아 오는 중입니다', `GitHub 검색 한도(분당 ${limit}회)에 맞춰 차례로 받고 있습니다. 받는 즉시 여기에 나타납니다.`);
       } else if (state.view === 'invalid' && state.src === 'as') {
         showEmpty('없는 차트입니다', '주소가 잘못됐거나 이 사이트가 받지 않는 카테고리입니다.', { id: 'home', label: S().homeLabel });

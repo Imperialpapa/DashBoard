@@ -12,7 +12,9 @@ const periods = require(path.join(root, 'lib/periods'));
 const { Store } = require(path.join(root, 'lib/store'));
 const { Collector } = require(path.join(root, 'lib/collector'));
 const { GitHubError } = require(path.join(root, 'lib/github'));
-const baseCfg = require(path.join(root, 'config'));
+const fullCfg = require(path.join(root, 'config'));
+// 덧붙는 출처는 시험마다 필요한 것만 켠다(켜 두면 build()가 실제 API를 부른다). Hacker News는 15번에서 따로 켠다.
+const baseCfg = { ...fullCfg, hn: null };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -641,7 +643,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 서버: data/hf/ 주소, meta.hf, 수동 갱신
     const { createApp } = require(path.join(root, 'server'));
     const gh = setup('hfRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
-    const { server, close } = createApp({ store: gh.store, collector: gh.collector, hf: { store: a.store, collector: a.collector } });
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, extra: { hf: { store: a.store, collector: a.collector } } });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     const meta = await (await fetch(`${base}/data/meta.json`)).json();
@@ -677,7 +679,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
       hf: { ...baseCfg.hf, token: '', listed: { weekly: 0, monthly: 0 }, firstYear: year },
     };
     const out1 = path.join(TMP, 'siteH1');
-    const r1 = await build({ cfg: cfgH, out: out1, search, hfList, ...quiet });
+    const r1 = await build({ cfg: cfgH, out: out1, search, api: { hf: hfList }, ...quiet });
     assert.deepEqual([r1.written, r1.hf.written, r1.hf.loaded, r1.hf.ran, r1.hf.failed], [5, 5, 0, 1, 0]);
     for (const f of ['data/weekly.rolling.json', 'data/hf/weekly.rolling.json', 'data/hf/state/weekly.rolling.json', `data/hf/yearly.${year}.json`]) {
       assert.ok(fs.existsSync(path.join(out1, f)), f);
@@ -708,7 +710,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     bump = 5;
     const out2 = path.join(TMP, 'siteH2');
-    const r2 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH2') }, out: out2, seedUrl: 'https://example.test/site/', search, hfList, fetchImpl: served(out1), ...quiet });
+    const r2 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH2') }, out: out2, seedUrl: 'https://example.test/site/', search, api: { hf: hfList }, fetchImpl: served(out1), ...quiet });
     assert.deepEqual([r2.loaded, r2.hf.loaded, r2.hf.written], [5, 5, 5]);
     const hfChart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/hf/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([hfChart2.version, hfChart2.items[0].gain, hfChart2.items[0].move], [2, 5, 0]);
@@ -718,7 +720,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     console.warn = () => {};
     const down = async () => { throw new HfError('Hugging Face에 연결하지 못했습니다 (ENOTFOUND)'); };
     const out3 = path.join(TMP, 'siteH3');
-    const r3 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH3') }, out: out3, seedUrl: 'https://example.test/site/', search, hfList: down, fetchImpl: served(out2), ...quiet });
+    const r3 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH3') }, out: out3, seedUrl: 'https://example.test/site/', search, api: { hf: down }, fetchImpl: served(out2), ...quiet });
     assert.deepEqual([r3.written, r3.hf.written, r3.hf.loaded, r3.hf.ran, r3.hf.failed], [5, 5, 5, 0, 1]);
     const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
     assert.match(meta3.hf.types.weekly[0].error, /연결하지 못했습니다/);
@@ -726,7 +728,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
 
     // 이어받은 것도 없이 실패하면 Hugging Face 탭 없이 낸다.
     const out4 = path.join(TMP, 'siteH4');
-    const r4 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH4') }, out: out4, search, hfList: down, ...quiet });
+    const r4 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH4') }, out: out4, search, api: { hf: down }, ...quiet });
     assert.deepEqual([r4.written, r4.hf.written], [5, 0]);
     assert.equal(JSON.parse(fs.readFileSync(path.join(out4, 'data/meta.json'), 'utf8')).hf, undefined);
     console.warn = warn;
@@ -867,7 +869,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 서버: data/as/ 주소와 meta.as
     const { createApp } = require(path.join(root, 'server'));
     const gh = setup('asRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
-    const { server, close } = createApp({ store: gh.store, collector: gh.collector, as: { store: a.store, collector: a.collector } });
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, extra: { as: { store: a.store, collector: a.collector } } });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
     const meta = await (await fetch(`${base}/data/meta.json`)).json();
@@ -889,7 +891,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const cfgS = { ...asCfg('buildS'), listed: { weekly: 0, monthly: 0 }, firstYear: year, static: { every: 15 * 60_000, budget: 5000 } };
     world.bump = 0;
     const out1 = path.join(TMP, 'siteS1');
-    const b1 = await build({ cfg: cfgS, out: out1, search, asApi: { fetchChart, lookup }, ...quiet });
+    const b1 = await build({ cfg: cfgS, out: out1, search, api: { as: { fetchChart, lookup } }, ...quiet });
     assert.deepEqual([b1.written, b1.hf, b1.as.written, b1.as.loaded, b1.as.ran, b1.as.failed], [5, null, 6, 0, 8, 0]);
     for (const f of ['data/as/free.all.json', 'data/as/grossing.6014.json', 'data/as/state/paid.all.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
     const metaS = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
@@ -908,11 +910,182 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     world.bump = 3;
     const out2 = path.join(TMP, 'siteS2');
-    const b2 = await build({ cfg: { ...cfgS, dataDir: path.join(TMP, 'buildS2') }, out: out2, seedUrl: 'https://example.test/site/', search, asApi: { fetchChart, lookup }, fetchImpl: served(out1), ...quiet });
+    const b2 = await build({ cfg: { ...cfgS, dataDir: path.join(TMP, 'buildS2') }, out: out2, seedUrl: 'https://example.test/site/', search, api: { as: { fetchChart, lookup } }, fetchImpl: served(out1), ...quiet });
     assert.deepEqual([b2.as.loaded, b2.as.written], [6, 6]);
     const chartS = JSON.parse(fs.readFileSync(path.join(out2, 'data/as/free.all.json'), 'utf8'));
     assert.deepEqual([chartS.version, chartS.items[1].gain, chartS.items[1].move, chartS.from], [2, 3, 0, undefined]);
     ok('app store: 차트 순서, 순위 변동·신규·평가 증가, 조회 실패 시 이어 쓰기, 일부 실패, 서버 주소, 빌드');
+  }
+
+  // 15) Hacker News: 기간마다 점수순으로 검색하고, 끝난 기간은 가끔만 다시 확인한다
+  {
+    const { HnCollector, storeConfig } = require(path.join(root, 'lib/hncollector'));
+    const { HnError, slim } = require(path.join(root, 'lib/hn'));
+    const { build } = require(path.join(root, 'lib/build'));
+    const DAYMS = 86_400_000;
+    const today = periods.startOfDay(Date.now()).getTime();
+    const year = new Date(today).getUTCFullYear();
+
+    // 검색 결과 다루기: 원문 주소와 사이트, 토론 페이지
+    assert.deepEqual(
+      slim({ objectID: '123', title: 'Show HN: X', url: 'https://www.example.com/a/b?c=1', author: 'pg', points: 42, num_comments: 7, created_at_i: 1_700_000_000 }),
+      { id: '123', name: 'Show HN: X', owner: 'pg', avatar: '', url: 'https://www.example.com/a/b?c=1', hn: 'https://news.ycombinator.com/item?id=123', desc: '', lang: 'example.com', stars: 42, comments: 7, created: '2023-11-14T22:13:20.000Z' },
+    );
+    // 본문만 있는 글이나 주소가 http(s)가 아닌 글은 토론 페이지로 잇는다.
+    const ask = slim({ objectID: '9', title: 'Ask HN: ?', author: 'a', points: null, created_at_i: 0 });
+    assert.deepEqual([ask.url, ask.lang, ask.stars, ask.comments], ['https://news.ycombinator.com/item?id=9', 'news.ycombinator.com', 0, 0]);
+    assert.equal(slim({ objectID: '9', title: 't', url: 'javascript:alert(1)', created_at_i: 0 }).url, 'https://news.ycombinator.com/item?id=9');
+    assert.equal(slim({ objectID: '9', title: 't', url: 'http://old.example.org/x', created_at_i: 0 }).lang, 'old.example.org');
+
+    // 가짜 검색: 점수 내림차순 글 3,000개. i번째 글은 (i % 500)일 전에 올라왔다.
+    const story = (i) => ({ id: `s${i}`, name: `Story ${i}`, owner: `u${i % 9}`, avatar: '', url: `https://site${i % 5}.example/${i}`, hn: `https://news.ycombinator.com/item?id=${i}`, desc: '', lang: `site${i % 5}.example`, stars: 9000 - i, comments: i % 50, created: new Date(today - (i % 500) * DAYMS + 3_600_000).toISOString() });
+    const stories = Array.from({ length: 3000 }, (_, i) => story(i));
+    const world = { calls: [], bump: 0, failing: new Set(), status: 503 };
+    const search = async ({ from, to, limit }) => {
+      world.calls.push(`${from}..${to}`);
+      if (world.failing.has('*') || world.failing.has(`${from}..${to}`)) throw new HnError(`HTTP ${world.status}`, { status: world.status });
+      const a = Date.parse(from);
+      const b = to ? Date.parse(to) + DAYMS : Infinity; // to는 그날 끝까지
+      const hit = stories.filter((s) => Date.parse(s.created) >= a && Date.parse(s.created) < b);
+      // 글이 많은 기간은 개수를 정확히 세지 못한다(total: null).
+      return { items: hit.slice(0, limit).map((s) => ({ ...s, stars: s.stars + world.bump })), total: hit.length < 1000 ? hit.length : null };
+    };
+    // 주간 5개(최근 7일, 이번 주, 지난 3주) + 월간 4개 + 연간 5개(최근 365일, 올해부터 3년 전까지) = 14개 기간
+    const hnCfg = (name) => ({
+      ...baseCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, name),
+      hn: { ...fullCfg.hn, listed: { weekly: 3, monthly: 2 }, firstYear: year - 3, concurrency: 3 },
+    });
+    const hnSetup = (name) => {
+      const cfg = hnCfg(name);
+      const store = new Store(storeConfig(cfg));
+      store.load();
+      return { cfg, store, collector: new HnCollector({ cfg, store, search }) };
+    };
+
+    const a = hnSetup('hnA');
+    const descs = a.collector.descs();
+    assert.equal(descs.length, 14);
+    const r1 = await a.collector.run();
+    assert.deepEqual([r1.pages, r1.buckets, r1.failed, r1.skipped, world.calls.length], [14, 14, 0, 0, 14]);
+    // 기간마다 그 기간에 올라온 글의 점수 상위 100개와 같다.
+    for (const d of descs) {
+      const from = Date.parse(d.from);
+      const to = d.to ? Date.parse(d.to) + DAYMS : Infinity;
+      const want = stories.filter((s) => Date.parse(s.created) >= from && Date.parse(s.created) < to).slice(0, 100).map((s) => s.id);
+      assert.deepEqual(a.store.get(d.type, d.key).items.map((x) => x.id), want, `${d.type}.${d.key}`);
+    }
+    const wk = a.store.get('weekly', 'rolling');
+    assert.deepEqual([wk.items.length, wk.total, wk.items[0].name, wk.items[0].rank, wk.items[0].comments, wk.items[0].spam], [48, 48, 'Story 0', 1, 0, false]);
+    assert.equal(wk.items[1].hn, 'https://news.ycombinator.com/item?id=1');
+    assert.equal(a.store.get('yearly', 'rolling').total, null); // 정확히 세지 못한 개수는 싣지 않는다
+    assert.ok(a.store.dir.endsWith(path.join('hnA', 'hn', 'cache')));
+
+    // 바로 다시 훑으면 진행 중인 기간(최근 N일, 이번 주·달·해) 6개만 다시 받는다. 끝난 기간은 건너뛴다.
+    for (const b of a.store.buckets.values()) for (const p of b.history) p.t -= 3_600_000;
+    world.calls = [];
+    world.bump = 4;
+    const r2 = await a.collector.run();
+    assert.deepEqual([r2.pages, r2.buckets, r2.skipped, world.calls.length], [6, 6, 8, 6]);
+    assert.ok(world.calls.every((c) => c.endsWith('..null') || descs.some((d) => d.kind === 'current' && c === `${d.from}..${d.to}`)));
+    const wk2 = a.store.get('weekly', 'rolling');
+    assert.deepEqual([wk2.version, wk2.items[0].stars, wk2.items[0].gain, wk2.items[0].move], [2, 9004, 4, 0]);
+    const closed = descs.find((d) => d.type === 'weekly' && d.kind === 'closed');
+    assert.equal(a.store.get('weekly', closed.key).version, 1);
+
+    // 끝난 기간은 GitHub과 같은 주기로 다시 확인한다: 오래된 연도는 7일에 한 번.
+    const old = a.collector.find('yearly', String(year - 3));
+    const oldBucket = a.store.get('yearly', old.key);
+    oldBucket.fetchedAt = Date.now() - 6 * DAYMS;
+    assert.equal(a.collector.due(old, Date.now()), false);
+    oldBucket.fetchedAt = Date.now() - 8 * DAYMS;
+    assert.equal(a.collector.due(old, Date.now()), true);
+    world.calls = [];
+    const r3 = await a.collector.run();
+    assert.deepEqual([r3.pages, world.calls.includes(`${old.from}..${old.to}`)], [7, true]);
+
+    // 한 기간만 실패하면 그 기간만 이전 순위를 두고 표시를 남긴다.
+    const warn = console.warn;
+    console.warn = () => {};
+    const rolling = a.collector.find('weekly', 'rolling');
+    world.failing.add(`${rolling.from}..null`);
+    const r4 = await a.collector.run();
+    assert.deepEqual([r4.failed, a.store.get('weekly', 'rolling').version], [1, 2]);
+    assert.equal(a.collector.bucketStatus(rolling).error, 'HTTP 503');
+    assert.equal(a.collector.bucketStatus(a.collector.find('monthly', 'rolling')).error, null);
+    world.failing.clear();
+    await a.collector.run();
+    assert.equal(a.collector.bucketStatus(rolling).error, null);
+
+    // 전부 실패하면 아무것도 바꾸지 않는다. 한도 초과(429)면 풀릴 때까지 쉬고, 빌드에서는 기다리다 시간을 넘기지 않는다.
+    const versions = () => [...a.store.buckets.values()].map((b) => b.version).join(',');
+    const v0 = versions();
+    world.failing.add('*');
+    world.status = 429;
+    assert.equal(await a.collector.run(), null);
+    assert.equal(versions(), v0);
+    assert.equal(a.collector.bucketStatus(rolling).error, 'Hacker News API 요청 한도를 넘었습니다');
+    assert.ok(a.collector.pauseUntil - Date.now() > 50_000);
+    assert.deepEqual(await a.collector.drain(Date.now() + 1000), { ran: 0, failed: 0, left: 1 });
+
+    // 서버가 아예 답하지 않으면(잇달아 8번 실패) 남은 기간은 보내지 않는다.
+    world.status = 503;
+    world.calls = [];
+    const b = hnSetup('hnB');
+    assert.equal(await b.collector.run(), null);
+    assert.ok(world.calls.length >= 8 && world.calls.length <= 10, `검색 ${world.calls.length}번`);
+    assert.equal(b.store.buckets.size, 0);
+    world.failing.clear();
+    console.warn = warn;
+
+    // 서버: data/hn/ 주소와 meta.hn
+    const { createApp } = require(path.join(root, 'server'));
+    const gh = setup('hnRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, extra: { hn: { store: a.store, collector: a.collector } } });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const meta = await (await fetch(`${base}/data/meta.json`)).json();
+    assert.deepEqual([meta.hn.types.weekly.length, meta.hn.types.yearly.length, meta.hn.types.weekly[0].hasData, meta.hf, meta.as], [5, 5, true, undefined, undefined]);
+    const res = await fetch(`${base}/data/hn/weekly.rolling.json`);
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).items[0].name, 'Story 0');
+    assert.equal((await fetch(`${base}/data/hn/yearly.1999.json`)).status, 404); // 목록 밖
+    assert.equal((await fetch(`${base}/data/hf/weekly.rolling.json`)).status, 404); // 켜지 않은 출처
+    assert.equal((await fetch(`${base}/api/refresh?src=hn&type=weekly&key=rolling`, { method: 'POST' })).status, 429); // 방금 받았으므로 쿨다운
+    close();
+    server.closeAllConnections();
+
+    // 빌드: data/hn/ 아래에 쓰고, 다음 빌드는 배포본에서 이어받아 진행 중인 기간만 다시 받는다.
+    const ghSearch = async () => ({ total: 1000, incomplete: false, items: page(100, 5000), rate: FAST });
+    const quiet = { log: () => {} };
+    const cfgN = { ...hnCfg('buildN'), listed: { weekly: 0, monthly: 0 }, firstYear: year, static: { every: 15 * 60_000, budget: 5000 } };
+    world.bump = 0;
+    world.calls = [];
+    const out1 = path.join(TMP, 'siteN1');
+    const b1 = await build({ cfg: cfgN, out: out1, search: ghSearch, api: { hn: search }, ...quiet });
+    assert.deepEqual([b1.written, b1.hf, b1.as, b1.hn.written, b1.hn.loaded, b1.hn.ran, b1.hn.failed], [5, null, null, 14, 0, 14, 0]);
+    for (const f of ['data/hn/weekly.rolling.json', `data/hn/yearly.${year - 3}.json`, 'data/hn/state/monthly.rolling.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
+    const metaN = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([metaN.hn.types.weekly.length, metaN.hn.types.yearly[4].key, metaN.hn.types.yearly[4].version, metaN.hf], [5, String(year - 3), 1, undefined]);
+    for (const name of fs.readdirSync(path.join(out1, 'data/hn/state'))) {
+      const f = path.join(out1, 'data/hn/state', name);
+      const st = JSON.parse(fs.readFileSync(f, 'utf8'));
+      st.fetchedAt -= 3_600_000;
+      for (const p of st.history) p.t -= 3_600_000;
+      fs.writeFileSync(f, JSON.stringify(st));
+    }
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    world.bump = 2;
+    world.calls = [];
+    const out2 = path.join(TMP, 'siteN2');
+    const b2 = await build({ cfg: { ...cfgN, dataDir: path.join(TMP, 'buildN2') }, out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api: { hn: search }, fetchImpl: served(out1), ...quiet });
+    assert.deepEqual([b2.hn.loaded, b2.hn.written, b2.hn.ran, world.calls.length], [14, 14, 6, 6]);
+    const chartN = JSON.parse(fs.readFileSync(path.join(out2, 'data/hn/weekly.rolling.json'), 'utf8'));
+    assert.deepEqual([chartN.version, chartN.total, chartN.items[0].gain, chartN.items[0].move, chartN.items[0].comments], [2, 48, 2, 0, 0]);
+    ok('hacker news: 기간별 점수순, 끝난 기간은 가끔만 재확인, 증가, 일부·전체 실패, 한도 초과, 서버 주소, 빌드');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });
