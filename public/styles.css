@@ -430,7 +430,7 @@ a {
 }
 
 .seg button {
-  padding: 4px 12px;
+  padding: 4px clamp(8px, 2.6vw, 12px); /* 단추가 넷(GitHub)이어도 320px 화면에서 넘치지 않게 좁힌다 */
   border: 0;
   border-radius: 6px;
   background: none;

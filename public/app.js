@@ -305,6 +305,10 @@
     el.scoreHead.textContent = s.score;
     el.seg.querySelector('[data-sort="rank"]').textContent = s.rankSort;
     el.seg.querySelector('[data-sort="gain"]').textContent = s.gainSort;
+    // 포크 수는 GitHub에만 있다. 포크순으로 보다가 다른 출처로 가면 기본 정렬로 돌아간다.
+    el.seg.querySelector('[data-sort="forks"]').hidden = state.src !== 'gh';
+    if (state.src !== 'gh' && state.sort === 'forks') state.sort = 'rank';
+    for (const x of el.seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x.dataset.sort === state.sort));
     el.facetLabel.textContent = s.facet;
     el.search.placeholder = s.searchHint;
     el.facetTitle.textContent = `${s.facet}별 ${s.unit} 수`;
@@ -599,6 +603,8 @@
       items = [...items].sort((a, b) => (b.gain ?? -Infinity) - (a.gain ?? -Infinity) || a.rank - b.rank);
     } else if (state.sort === 'pace') {
       items = [...items].sort((a, b) => pace(b, d.dataAt) - pace(a, d.dataAt));
+    } else if (state.sort === 'forks') {
+      items = [...items].sort((a, b) => (b.forks || 0) - (a.forks || 0) || a.rank - b.rank);
     }
     return items;
   }
