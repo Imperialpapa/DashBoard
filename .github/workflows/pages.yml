@@ -48,6 +48,8 @@ jobs:
         env:
           # 저장소 권한이 아니라 검색 API 한도(분당 30회)를 위해서만 쓴다.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 없어도 된다(익명으로 받는다). 한도 초과가 잦으면 저장소 Secrets에 HF_TOKEN을 넣는다.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SEED_URL: ${{ steps.pages.outputs.base_url }}
 
       - uses: actions/upload-pages-artifact@v5

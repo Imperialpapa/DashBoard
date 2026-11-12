@@ -437,6 +437,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal((await get('/data/weekly.2099-W01.json')).status, 404);
     assert.equal((await get('/data/bogus.rolling.json')).status, 404);
     assert.equal((await get('/data/state/weekly.rolling.json')).status, 404);
+    assert.equal((await get('/data/hf/weekly.rolling.json')).status, 404); // Hugging Face 없이 띄운 서버
+    assert.equal(meta.hf, undefined);
     assert.equal((await get('/config.js')).status, 404); // 화면 파일 말고는 내보내지 않는다
 
     r = await get('/');
@@ -468,7 +470,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     let extra = 0;
     const search = async () => ({ total: 1000, incomplete: false, items: page(100, 5000).map((x) => ({ ...x, stars: x.stars + extra })), rate: FAST });
     const quiet = { log: () => {} };
-    const cfgA = { ...baseCfg, token: '', dataDir: path.join(TMP, 'buildA'), listed: { weekly: 2, monthly: 2 }, firstYear: new Date().getUTCFullYear() - 1, static: { every: 15 * 60_000, budget: 60_000 } };
+    // hf: null → Hugging Face 없이 GitHub 쪽만 본다(Hugging Face는 12번에서 따로).
+    const cfgA = { ...baseCfg, hf: null, token: '', dataDir: path.join(TMP, 'buildA'), listed: { weekly: 2, monthly: 2 }, firstYear: new Date().getUTCFullYear() - 1, static: { every: 15 * 60_000, budget: 60_000 } };
     const out1 = path.join(TMP, 'site1');
     const r1 = await build({ cfg: cfgA, out: out1, search, ...quiet });
     // 주간 4(최근 7일·이번 주·지난 2주) + 월간 4 + 연간 3(최근 365일·올해·작년)
@@ -533,6 +536,201 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     await assert.rejects(build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildD') }, out: path.join(TMP, 'site4'), search: down, ...quiet }), /하나도 없습니다/);
     console.warn = warn;
     ok('build: 써 내는 파일, 배포본에서 이어받기, 최근 구간만 재확인, 실패 시 덮어쓰지 않음');
+  }
+
+  // 12) Hugging Face: 좋아요순 목록을 훑어 기간에 나눠 담기
+  {
+    const { HfCollector, storeConfig } = require(path.join(root, 'lib/hfcollector'));
+    const { HfError, readRate, slim } = require(path.join(root, 'lib/hf'));
+    const DAYMS = 86_400_000;
+    const today = periods.startOfDay(Date.now()).getTime();
+
+    // API 응답 다루기
+    const rate = readRate(new Headers({ ratelimit: '"api";r=499;t=229', 'ratelimit-policy': '"fixed window";"api";q=500;w=300' }), 1_000_000);
+    assert.deepEqual(rate, { limit: 500, window: 300, remaining: 499, resetAt: 1_229_000 });
+    assert.equal(readRate(new Headers({})), null);
+    assert.deepEqual(
+      slim({ _id: 'abc', id: 'Qwen/Q', likes: 5, downloads: 7, tags: ['transformers', 'license:mit'], pipeline_tag: 'text-generation', library_name: 'transformers', createdAt: '2026-01-01T00:00:00.000Z' }),
+      { id: 'abc', name: 'Qwen/Q', owner: 'Qwen', avatar: '', url: 'https://huggingface.co/Qwen/Q', desc: '', lang: 'text-generation', stars: 5, downloads: 7, lib: 'transformers', license: 'mit', created: '2026-01-01T00:00:00.000Z' },
+    );
+
+    // 좋아요 내림차순 모델 2,500개. i번째 모델은 (i % 400)일 전에 만들어져, 어느 기간에든 드문드문 섞여 있다.
+    const model = (i, created) => ({ id: `m${i}`, name: `org/model-${i}`, owner: 'org', avatar: '', url: `https://huggingface.co/org/model-${i}`, desc: '', lang: 'text-generation', stars: 5000 - i, downloads: 10, lib: 'transformers', license: 'mit', created });
+    const models = Array.from({ length: 2500 }, (_, i) => model(i, new Date(today - (i % 400) * DAYMS + 3_600_000).toISOString()));
+    let calls = 0;
+    let bump = 0;
+    const lister = (source) => async ({ cursor, limit }) => {
+      calls += 1;
+      const start = cursor ? Number(cursor) : 0;
+      const items = source.slice(start, start + limit).map((m) => ({ ...m, stars: m.stars + bump }));
+      return { items, next: start + limit < source.length ? String(start + limit) : null, rate: { limit: 500, window: 300, remaining: 400, resetAt: Date.now() + 1000 } };
+    };
+    const hfSetup = (name, list, hfOver = {}) => {
+      const cfg = { ...baseCfg, dataDir: path.join(TMP, name), hf: { ...baseCfg.hf, token: '', pageSize: 500, maxPages: 10, ...hfOver } };
+      const store = new Store(storeConfig(cfg));
+      store.load();
+      return { cfg, store, collector: new HfCollector({ cfg, store, list }) };
+    };
+    // 기간에 들어야 할 모델: 만든 날짜가 [from 0시, to 다음 날 0시) 안에 있는 것을 좋아요순으로 100개
+    const expected = (desc, source) => {
+      const from = Date.parse(desc.from);
+      const to = desc.to ? Date.parse(desc.to) + DAYMS : Infinity;
+      return source.filter((m) => Date.parse(m.created) >= from && Date.parse(m.created) < to).slice(0, 100).map((m) => m.id);
+    };
+
+    // 끝까지 훑는 경우: 모든 기간이 "만든 날짜로 거른 좋아요 상위 100개"와 같다.
+    const a = hfSetup('hfA', lister(models));
+    const r1 = await a.collector.run();
+    assert.deepEqual([r1.pages, r1.exhausted, calls], [5, true, 5]);
+    const descs = a.collector.descs();
+    assert.equal(r1.buckets, descs.length);
+    assert.equal(descs.filter((d) => d.type === 'yearly').pop().key, String(baseCfg.hf.firstYear));
+    for (const d of descs) {
+      assert.deepEqual(a.store.get(d.type, d.key).items.map((x) => x.id), expected(d, models), `${d.type}.${d.key}`);
+    }
+    const wk = a.store.get('weekly', 'rolling');
+    assert.equal(wk.items.length, 56); // 최근 7일에 든 것은 56개뿐: 끝까지 훑었으므로 이것이 전부다
+    assert.deepEqual([wk.items[0].name, wk.items[8].name, wk.items[8].rank, wk.items[8].crank, wk.items[8].spam], ['org/model-0', 'org/model-400', 9, 9, false]);
+    assert.deepEqual([wk.cut, wk.total, JSON.parse(wk.body).cut], [0, null, undefined]);
+    assert.equal(a.store.get('yearly', 'rolling').items[99].name, 'org/model-99');
+    assert.ok(a.store.dir.endsWith(path.join('hfA', 'hf', 'cache'))); // GitHub 캐시와 섞이지 않는다
+
+    // 다시 훑으면 지난 스냅샷과 비교한 증가가 나온다.
+    for (const b of a.store.buckets.values()) for (const p of b.history) p.t -= 3_600_000;
+    bump = 3;
+    const r2 = await a.collector.run();
+    assert.equal(r2.changed.size, descs.filter((d) => expected(d, models).length > 0).length); // 빈 기간(400일보다 오래된 구간)은 그대로
+    const wk2 = a.store.get('weekly', 'rolling');
+    assert.deepEqual([wk2.version, wk2.items[0].gain, wk2.items[0].move], [2, 3, 0]);
+    bump = 0;
+
+    // 쪽 수 상한에서 멈추는 경우: 덜 찬 기간에는 "여기까지만 훑었다"는 표시(cut)가 남는다.
+    calls = 0;
+    const b2 = hfSetup('hfB', lister(models), { maxPages: 2 });
+    const r3 = await b2.collector.run();
+    assert.deepEqual([r3.pages, r3.exhausted, r3.lowest, calls], [2, false, 4001, 2]);
+    const cutWk = b2.store.get('weekly', 'rolling');
+    assert.deepEqual([cutWk.items.length, cutWk.cut, JSON.parse(cutWk.body).cut], [24, 4001, 4001]);
+    assert.equal(b2.store.get('yearly', 'rolling').cut, 0); // 100개가 찬 기간에는 표시하지 않는다
+
+    // 모든 기간이 차면 더 받지 않는다.
+    calls = 0;
+    const fresh = Array.from({ length: 2500 }, (_, i) => model(i, new Date(today).toISOString()));
+    const c3 = hfSetup('hfC', lister(fresh), { listed: { weekly: 0, monthly: 0 }, firstYear: new Date(today).getUTCFullYear() });
+    const r4 = await c3.collector.run();
+    assert.deepEqual([r4.pages, r4.buckets, calls], [1, 5, 1]); // 최근 7일·이번 주·최근 30일·이번 달·올해(최근 365일은 시작 연도 이전에 걸쳐 빠진다)
+
+    // 실패하면 아무것도 바꾸지 않고, 한도 초과면 풀릴 때까지 쉰다. 빌드에서는 기다리다 시간을 넘기지 않는다.
+    const warn = console.warn;
+    console.warn = () => {};
+    let n = 0;
+    const flaky = async (args) => {
+      n += 1;
+      if (n === 2) throw new HfError('Too Many Requests', { status: 429, retryAfter: 120 });
+      return lister(models)(args);
+    };
+    const d4 = hfSetup('hfD', flaky);
+    assert.equal(await d4.collector.run(), null);
+    assert.equal(d4.store.buckets.size, 0);
+    assert.ok(d4.collector.pauseUntil - Date.now() > 100_000);
+    assert.equal(d4.collector.bucketStatus(d4.collector.find('weekly', 'rolling')).error, 'Hugging Face API 요청 한도를 넘었습니다');
+    assert.deepEqual(await d4.collector.drain(Date.now() + 1000), { ran: 0, failed: 0, left: 1 }); // 2분을 기다리지 않고 바로 돌아온다
+    assert.equal(n, 2); // 쉬는 동안에는 부르지 않는다
+    console.warn = warn;
+
+    // 서버: data/hf/ 주소, meta.hf, 수동 갱신
+    const { createApp } = require(path.join(root, 'server'));
+    const gh = setup('hfRoutes', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
+    const { server, close } = createApp({ store: gh.store, collector: gh.collector, hf: { store: a.store, collector: a.collector } });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const meta = await (await fetch(`${base}/data/meta.json`)).json();
+    assert.equal(meta.hf.types.weekly[0].hasData, true);
+    assert.equal(meta.hf.types.yearly.length, 2 + new Date(today).getUTCFullYear() - baseCfg.hf.firstYear);
+    let res = await fetch(`${base}/data/hf/weekly.rolling.json?v=2`);
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).items[0].name, 'org/model-0');
+    assert.equal((await fetch(`${base}/data/hf/weekly.2099-W01.json`)).status, 404);
+    assert.equal((await fetch(`${base}/data/hf/yearly.2020.json`)).status, 404); // 목록(2023년부터) 밖
+    res = await fetch(`${base}/api/refresh?src=hf&type=weekly&key=rolling`, { method: 'POST' });
+    assert.equal(res.status, 429); // 방금 훑었으므로 쿨다운
+    assert.equal((await fetch(`${base}/api/refresh?src=nope&type=weekly&key=rolling`, { method: 'POST' })).status, 404);
+    close();
+    server.closeAllConnections();
+    ok('hugging face: 기간에 나눠 담기, 증가, 쪽 상한 표시, 일찍 멈춤, 실패 처리, 서버 주소');
+  }
+
+  // 13) 정적 사이트 빌드에 Hugging Face 싣기
+  {
+    const { build } = require(path.join(root, 'lib/build'));
+    const { HfError } = require(path.join(root, 'lib/hf'));
+    const today = periods.startOfDay(Date.now()).getTime();
+    const search = async () => ({ total: 1000, incomplete: false, items: page(100, 5000), rate: FAST });
+    let bump = 0;
+    const models = Array.from({ length: 300 }, (_, i) => ({ id: `m${i}`, name: `org/model-${i}`, owner: 'org', avatar: '', url: `https://huggingface.co/org/model-${i}`, desc: '', lang: 'text-to-image', stars: 900 - i, downloads: 1, lib: '', license: '', created: new Date(today).toISOString() }));
+    const hfList = async () => ({ items: models.map((m) => ({ ...m, stars: m.stars + bump })), next: null, rate: null });
+    const quiet = { log: () => {} };
+    const year = new Date(today).getUTCFullYear();
+    const cfgH = {
+      ...baseCfg, token: '', dataDir: path.join(TMP, 'buildH'), listed: { weekly: 0, monthly: 0 }, firstYear: year,
+      static: { every: 15 * 60_000, budget: 2000 },
+      hf: { ...baseCfg.hf, token: '', listed: { weekly: 0, monthly: 0 }, firstYear: year },
+    };
+    const out1 = path.join(TMP, 'siteH1');
+    const r1 = await build({ cfg: cfgH, out: out1, search, hfList, ...quiet });
+    assert.deepEqual([r1.written, r1.hf.written, r1.hf.loaded, r1.hf.ran, r1.hf.failed], [5, 5, 0, 1, 0]);
+    for (const f of ['data/weekly.rolling.json', 'data/hf/weekly.rolling.json', 'data/hf/state/weekly.rolling.json', `data/hf/yearly.${year}.json`]) {
+      assert.ok(fs.existsSync(path.join(out1, f)), f);
+    }
+    const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    assert.equal(meta1.types.weekly[0].hasData, true); // GitHub 쪽은 그대로 meta 바로 아래
+    assert.ok(periods.TYPES.every((t) => meta1.hf.types[t].every((b) => b.hasData && b.version === 1 && !b.error)));
+    assert.equal(meta1.hf.top, 100);
+    const hfChart = JSON.parse(fs.readFileSync(path.join(out1, 'data/hf/weekly.rolling.json'), 'utf8'));
+    assert.deepEqual([hfChart.items.length, hfChart.items[0].name, hfChart.items[0].stars, hfChart.items[0].spam, hfChart.skipped], [100, 'org/model-0', 900, false, 0]);
+    const ghChart = JSON.parse(fs.readFileSync(path.join(out1, 'data/weekly.rolling.json'), 'utf8'));
+    assert.equal(ghChart.items[0].name, 'o/r1'); // 두 출처의 순위가 섞이지 않는다
+
+    // 새 기계에서 다시 빌드: Hugging Face 상태도 배포본에서 이어받아 증가를 계산한다.
+    for (const dir of ['data/state', 'data/hf/state']) {
+      for (const name of fs.readdirSync(path.join(out1, dir))) {
+        const f = path.join(out1, dir, name);
+        const st = JSON.parse(fs.readFileSync(f, 'utf8'));
+        st.fetchedAt -= 3_600_000;
+        for (const p of st.history) p.t -= 3_600_000;
+        fs.writeFileSync(f, JSON.stringify(st));
+      }
+    }
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    bump = 5;
+    const out2 = path.join(TMP, 'siteH2');
+    const r2 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH2') }, out: out2, seedUrl: 'https://example.test/site/', search, hfList, fetchImpl: served(out1), ...quiet });
+    assert.deepEqual([r2.loaded, r2.hf.loaded, r2.hf.written], [5, 5, 5]);
+    const hfChart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/hf/weekly.rolling.json'), 'utf8'));
+    assert.deepEqual([hfChart2.version, hfChart2.items[0].gain, hfChart2.items[0].move], [2, 5, 0]);
+
+    // Hugging Face가 실패해도 빌드는 끝난다: 이어받은 순위를 그대로 다시 싣고, 실패했다는 표시를 남긴다.
+    const warn = console.warn;
+    console.warn = () => {};
+    const down = async () => { throw new HfError('Hugging Face에 연결하지 못했습니다 (ENOTFOUND)'); };
+    const out3 = path.join(TMP, 'siteH3');
+    const r3 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH3') }, out: out3, seedUrl: 'https://example.test/site/', search, hfList: down, fetchImpl: served(out2), ...quiet });
+    assert.deepEqual([r3.written, r3.hf.written, r3.hf.loaded, r3.hf.ran, r3.hf.failed], [5, 5, 5, 0, 1]);
+    const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
+    assert.match(meta3.hf.types.weekly[0].error, /연결하지 못했습니다/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(out3, 'data/hf/weekly.rolling.json'), 'utf8')).version, 2);
+
+    // 이어받은 것도 없이 실패하면 Hugging Face 탭 없이 낸다.
+    const out4 = path.join(TMP, 'siteH4');
+    const r4 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH4') }, out: out4, search, hfList: down, ...quiet });
+    assert.deepEqual([r4.written, r4.hf.written], [5, 0]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(out4, 'data/meta.json'), 'utf8')).hf, undefined);
+    console.warn = warn;
+    ok('build + hugging face: data/hf/ 파일, 배포본에서 이어받기, 실패해도 GitHub 순위는 낸다');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

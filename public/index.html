@@ -24,7 +24,7 @@
     <div class="wrap top-in">
       <h1 class="brand">
         <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
-        GitHub 베스트
+        <span id="brandText">GitHub 베스트</span>
       </h1>
       <p class="live" id="live" data-state="connecting">
         <span class="live-dot" aria-hidden="true"></span>
@@ -38,6 +38,10 @@
 
   <main class="wrap">
     <section class="hero" aria-label="기간">
+      <div class="sources" id="sources" role="group" aria-label="출처" hidden>
+        <button type="button" data-src="gh" aria-pressed="true">GitHub</button>
+        <button type="button" data-src="hf" aria-pressed="false">Hugging Face</button>
+      </div>
       <div class="types" role="group" aria-label="집계 단위">
         <button type="button" data-type="weekly" aria-pressed="true">주간</button>
         <button type="button" data-type="monthly" aria-pressed="false">월간</button>
@@ -64,7 +68,7 @@
         <button type="button" data-sort="pace" aria-pressed="false">하루 평균순</button>
       </div>
       <label class="field">
-        <span class="field-label">언어</span>
+        <span class="field-label" id="facetLabel">언어</span>
         <select id="langSelect"><option value="">전체</option></select>
       </label>
       <label class="field field-grow">
@@ -83,7 +87,7 @@
       <section class="board" aria-label="순위표">
         <p class="notice" id="notice" hidden></p>
         <div class="cols" id="cols" aria-hidden="true">
-          <span>순위</span><span></span><span>저장소</span><span class="cols-stars">스타</span><span class="cols-gain" id="gainHead">증가</span>
+          <span>순위</span><span></span><span id="unitHead">저장소</span><span class="cols-stars" id="scoreHead">스타</span><span class="cols-gain" id="gainHead">증가</span>
         </div>
         <ol class="rows" id="rows"></ol>
         <div class="empty" id="empty" hidden></div>
@@ -91,8 +95,8 @@
 
       <aside class="rail">
         <section class="panel">
-          <h2>언어별 저장소 수</h2>
-          <p class="hint">막대를 누르면 그 언어만 보여 줍니다.</p>
+          <h2 id="facetTitle">언어별 저장소 수</h2>
+          <p class="hint" id="facetHint">막대를 누르면 그 언어만 보여 줍니다.</p>
           <div class="langs" id="langs"></div>
         </section>
         <section class="panel">
@@ -111,7 +115,7 @@
       </aside>
     </div>
 
-    <footer class="foot">
+    <footer class="foot" id="foot">
       <p>순위는 해당 기간(UTC 기준)에 새로 만들어진 공개 저장소를 스타 수로 줄 세운 GitHub 검색 결과 상위 100개입니다. 포크는 빠집니다. 기간 안에 만들어진 저장소만 다루므로 스타 수가 곧 그 기간에 받은 스타입니다.</p>
       <p>증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다.</p>
       <p>스타에 비해 포크가 거의 없는 저장소는 스타를 사들인 스팸으로 의심해 기본으로 숨기고, 그만큼 아래 순위를 더 받아 100개를 채웁니다. 숫자만 보는 어림 규칙이라 틀릴 수 있으니, 숨기기를 끄면 표시가 붙은 채로 모두 볼 수 있습니다.</p>

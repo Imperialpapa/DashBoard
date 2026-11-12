@@ -161,10 +161,12 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
   margin-right: auto;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .brand svg {
@@ -234,6 +236,37 @@ a {
   display: grid;
   gap: 10px;
   padding-block: 28px 22px;
+}
+
+/* 출처 탭(GitHub | Hugging Face): 그 아래 주간·월간·연간과 헷갈리지 않게 알약 모양으로 둔다 */
+.sources {
+  display: flex;
+  justify-self: start;
+  margin-bottom: 8px;
+  padding: 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.sources button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.sources button:hover {
+  color: var(--ink);
+}
+
+.sources button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
 }
 
 .types {
@@ -576,6 +609,15 @@ a {
   height: 36px;
   border-radius: 8px;
   background: var(--wash);
+}
+
+/* 프로필 사진이 없는 출처(Hugging Face)는 머리글자를 넣는다 */
+.avatar-txt {
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .repo {
@@ -975,8 +1017,17 @@ button.lang-row:hover {
 }
 
 @media (max-width: 700px) {
+  /* 제목(출처 이름)은 줄이지 않고, 상태 문구가 남는 자리만큼만 보이게 한다 */
+  .live {
+    min-width: 0;
+  }
+
+  .live-dot {
+    flex: none;
+  }
+
   .live #liveText {
-    max-width: 44vw;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -3,8 +3,36 @@
 
   const TYPES = ['weekly', 'monthly', 'yearly'];
   const DAY = 86_400_000;
-  const NO_LANG = '언어 표시 없음';
   const CURRENT_LABEL = { weekly: '이번 주', monthly: '이번 달', yearly: '올해' };
+
+  // 출처(탭)별 낱말과 문구. 화면 구조와 데이터 모양은 같고(좋아요 수도 stars에 들어 있다) 부르는 이름만 다르다.
+  //   dir: 순위 파일이 놓인 곳(data/ 아래), facet: 언어 자리에 보여 주는 분류
+  const SOURCES = {
+    gh: {
+      name: 'GitHub', dir: '', unit: '저장소', score: '스타', mark: '★', facet: '언어', noFacet: '언어 표시 없음',
+      searchHint: '저장소 이름이나 설명으로 찾기',
+      histHint: '순위에 든 저장소가 언제 만들어졌는지 보여 줍니다.',
+      none: '이 기간에 만들어진 저장소가 아직 없습니다',
+      noMatch: ['조건에 맞는 저장소가 없습니다', '언어나 검색어를 바꿔 보세요.'],
+      foot: [
+        '순위는 해당 기간(UTC 기준)에 새로 만들어진 공개 저장소를 스타 수로 줄 세운 GitHub 검색 결과 상위 100개입니다. 포크는 빠집니다. 기간 안에 만들어진 저장소만 다루므로 스타 수가 곧 그 기간에 받은 스타입니다.',
+        '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다.',
+        '스타에 비해 포크가 거의 없는 저장소는 스타를 사들인 스팸으로 의심해 기본으로 숨기고, 그만큼 아래 순위를 더 받아 100개를 채웁니다. 숫자만 보는 어림 규칙이라 틀릴 수 있으니, 숨기기를 끄면 표시가 붙은 채로 모두 볼 수 있습니다.',
+      ],
+    },
+    hf: {
+      name: 'Hugging Face', dir: 'hf/', unit: '모델', score: '좋아요', mark: '♥', facet: '작업', noFacet: '작업 표시 없음',
+      searchHint: '모델 이름으로 찾기',
+      histHint: '순위에 든 모델이 언제 만들어졌는지 보여 줍니다.',
+      none: '이 기간에 만들어진 모델을 아직 찾지 못했습니다',
+      noMatch: ['조건에 맞는 모델이 없습니다', '작업 종류나 검색어를 바꿔 보세요.'],
+      foot: [
+        '순위는 해당 기간(UTC 기준)에 새로 만들어진 Hugging Face 공개 모델을 좋아요 수로 줄 세운 상위 100개입니다. 기간 안에 만들어진 모델만 다루므로 좋아요 수가 곧 그 기간에 받은 좋아요입니다. 좋아요가 아주 적은 모델까지는 훑지 않아서, 막 시작한 기간은 100개가 안 될 수 있습니다.',
+        '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. 다운로드는 최근 30일 동안의 횟수입니다.',
+        '2022년 3월 이전에 만든 모델은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.',
+      ],
+    },
+  };
   const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
   // GitHub이 언어마다 쓰는 색(linguist). 항상 언어 이름과 함께 표시한다.
@@ -31,9 +59,13 @@
     langs: $('#langs'), hist: $('#hist'), status: $('#status'),
     refreshBtn: $('#refreshBtn'), refreshMsg: $('#refreshMsg'), tip: $('#tip'),
     spamLabel: $('#spamLabel'), spamToggle: $('#spamToggle'), spamCount: $('#spamCount'),
+    sources: $('#sources'), brandText: $('#brandText'), unitHead: $('#unitHead'), scoreHead: $('#scoreHead'),
+    facetLabel: $('#facetLabel'), facetTitle: $('#facetTitle'), facetHint: $('#facetHint'), histHint: $('#histHint'),
+    foot: $('#foot'),
   };
 
   const state = {
+    src: 'gh', // 출처(탭): gh | hf
     type: 'weekly',
     key: 'rolling',
     sort: 'rank',
@@ -43,8 +75,8 @@
     items: [], // 지금 보기 방식(스팸 숨김 여부)에 맞춘 순위표 항목
     meta: null, // 기간 목록
     metaDay: 0, // 기간 목록을 받은 날(UTC 일 번호)
-    status: new Map(), // 'type/key' → 그 기간의 수집 상태
-    collector: null,
+    status: new Map(), // 'src:type/key' → 그 기간의 수집 상태
+    collectors: {}, // 출처별 수집기 상태
     data: null, // 지금 보고 있는 순위 데이터
     dataId: '',
     view: 'loading', // loading | ready | pending | invalid | offline
@@ -110,12 +142,19 @@
   }
 
   const pace = (r, asOf) => r.stars / Math.max(1, (asOf - Date.parse(r.created)) / DAY);
-  const langOf = (r) => r.lang || NO_LANG;
-  const idOf = (type, key) => `${type}/${key}`;
+  const S = () => SOURCES[state.src];
+  const langOf = (r) => r.lang || S().noFacet;
+  const idOf = (type, key, src = state.src) => `${src}:${type}/${key}`;
   const currentId = () => idOf(state.type, state.key);
-  const listing = () => (state.meta ? state.meta.types[state.type] : []);
+  /** 한 출처의 기간 목록과 상태. GitHub 것은 meta 바로 아래에, Hugging Face 것은 meta.hf에 있다(없으면 null). */
+  const metaOf = (src = state.src) => (state.meta ? (src === 'gh' ? state.meta : state.meta[src]) || null : null);
+  const listing = () => {
+    const m = metaOf();
+    return m ? m.types[state.type] : [];
+  };
   const currentDesc = () => listing().find((d) => d.key === state.key) || null;
   const currentStatus = () => state.status.get(currentId()) || null;
+  const collector = () => state.collectors[state.src] || null;
 
   /**
    * 서버는 "받은 그대로의 상위 N개"와 "스팸 의심을 뺀 상위 N개"를 한 목록에 담아 준다.
@@ -146,22 +185,43 @@
     return key;
   }
 
+  /** 언어 색 점. 작업 종류(Hugging Face)에는 정해진 색이 없어 점을 찍지 않는다. */
   function langDot(lang) {
+    if (state.src !== 'gh') return '';
     const color = LANG_COLORS[lang];
     return `<i class="lang-dot"${color ? ` style="background:${color}"` : ''}></i>`;
   }
 
-  // ── 주소(#weekly/rolling) ─────────────────────────────────────
+  // ── 주소(#weekly/rolling, #hf/weekly/rolling) ─────────────────
   function readHash() {
-    const m = /^#(weekly|monthly|yearly)\/([\w-]+)$/.exec(location.hash);
-    state.type = m ? m[1] : 'weekly';
-    state.key = m ? m[2] : 'rolling';
+    const m = /^#(?:(hf)\/)?(weekly|monthly|yearly)\/([\w-]+)$/.exec(location.hash);
+    state.src = m && m[1] ? m[1] : 'gh';
+    state.type = m ? m[2] : 'weekly';
+    state.key = m ? m[3] : 'rolling';
   }
 
-  function go(type, key) {
-    const hash = `#${type}/${key}`;
+  function go(type, key, src = state.src) {
+    const hash = `#${src === 'gh' ? '' : `${src}/`}${type}/${key}`;
     if (location.hash === hash) return;
     location.hash = hash;
+  }
+
+  /** 출처가 바뀌면 달라지는 고정 문구(제목, 표 머리, 안내문)를 맞춘다. */
+  function applySource() {
+    const s = S();
+    document.documentElement.dataset.src = state.src;
+    document.title = `${s.name} 베스트`;
+    el.brandText.textContent = `${s.name} 베스트`;
+    el.unitHead.textContent = s.unit;
+    el.scoreHead.textContent = s.score;
+    el.seg.querySelector('[data-sort="rank"]').textContent = `${s.score}순`;
+    el.facetLabel.textContent = s.facet;
+    el.search.placeholder = s.searchHint;
+    el.facetTitle.textContent = `${s.facet}별 ${s.unit} 수`;
+    el.facetHint.textContent = `막대를 누르면 그 ${s.facet}만 보여 줍니다.`;
+    el.histHint.textContent = s.histHint;
+    el.foot.innerHTML = s.foot.map((p) => `<p>${esc(p)}</p>`).join('');
+    el.spamLabel.hidden = state.src !== 'gh'; // 스팸 의심 규칙(스타 대비 포크)은 GitHub에만 있다
   }
 
   // ── 서버 통신 ────────────────────────────────────────────────
@@ -172,8 +232,12 @@
     // 서버 방식에서는 서버 시계에 맞춘다. 정적 사이트의 meta.now는 만든 시각이라 시계 보정에 쓸 수 없다.
     state.skew = state.live ? meta.now - Date.now() : 0;
     document.documentElement.dataset.mode = state.live ? 'live' : 'static';
-    state.collector = meta.collector;
-    for (const type of TYPES) for (const b of meta.types[type]) state.status.set(idOf(type, b.key), b);
+    for (const src of Object.keys(SOURCES)) {
+      const m = metaOf(src);
+      if (!m) continue;
+      state.collectors[src] = m.collector;
+      for (const type of TYPES) for (const b of m.types[type]) state.status.set(idOf(type, b.key, src), b);
+    }
     renderNav();
     renderSub();
     renderSpam();
@@ -191,7 +255,18 @@
     const seq = ++state.loadSeq;
     const { type, key } = state;
     const id = idOf(type, key);
+    const dir = S().dir;
     clearTimeout(state.retryTimer);
+
+    // 이 사이트에 없는 출처(예: Hugging Face 수집을 끈 경우)는 요청하지 않는다.
+    if (state.meta && !metaOf()) {
+      state.loadingId = '';
+      state.view = 'invalid';
+      state.data = null;
+      state.dataId = '';
+      renderAll();
+      return;
+    }
 
     // 정적 사이트: 목록에는 있지만 아직 만들어지지 않은 기간은 파일이 없으니 요청하지 않는다.
     const known = state.status.get(id);
@@ -209,7 +284,7 @@
     try {
       // ?v=는 브라우저·CDN이 예전 판을 돌려주지 않게 하는 꼬리표다.
       const v = known && known.version ? `?v=${known.version}` : '';
-      res = await fetch(`data/${type}.${encodeURIComponent(key)}.json${v}`, state.live ? undefined : { cache: 'no-cache' });
+      res = await fetch(`data/${dir}${type}.${encodeURIComponent(key)}.json${v}`, state.live ? undefined : { cache: 'no-cache' });
     } catch {
       if (seq !== state.loadSeq) return;
       state.loadingId = '';
@@ -292,7 +367,7 @@
     });
     es.addEventListener('bucket', (e) => {
       const st = JSON.parse(e.data);
-      const id = idOf(st.type, st.key);
+      const id = idOf(st.type, st.key, st.src || 'gh');
       state.status.set(id, { ...state.status.get(id), ...st });
       if (id !== currentId()) return;
       const stale = !state.data || state.dataId !== id || st.version !== state.data.version;
@@ -301,7 +376,8 @@
       renderStatus();
     });
     es.addEventListener('collector', (e) => {
-      state.collector = JSON.parse(e.data);
+      const c = JSON.parse(e.data);
+      state.collectors[c.src || 'gh'] = c;
       renderStatus();
     });
     es.onopen = () => {
@@ -320,11 +396,16 @@
   }
 
   function renderNav() {
+    // 출처 탭은 이 사이트에 Hugging Face 순위가 있을 때만(또는 그 주소로 들어왔을 때만) 보인다.
+    el.sources.hidden = !(state.src !== 'gh' || metaOf('hf'));
+    for (const b of el.sources.querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', String(b.dataset.src === state.src));
+    }
     for (const b of el.types.querySelectorAll('button')) {
       b.setAttribute('aria-pressed', String(b.dataset.type === state.type));
     }
     const list = listing();
-    const sig = `${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
+    const sig = `${state.src}|${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
     if (el.period.dataset.sig !== sig) {
       el.period.dataset.sig = sig;
       const known = list.some((d) => d.key === state.key);
@@ -363,9 +444,13 @@
     else when = `${ymd(d.from)} – ${toText}에`;
     const total = d.total == null ? '' : d.approx ? ` 약 ${approxKo(d.total)}개` : ` ${fmt(d.total)}개`;
     const skipped = state.hideSpam ? spamCount() : 0;
+    const s = S();
+    // cut: 순위표가 다 차지 않았고, 이 수보다 적은 것은 아직 훑지 못했다(Hugging Face).
+    const cut = d.cut && state.items.length < (d.top || 100) ? ` (${s.score} ${fmt(d.cut)}개 이상까지만 훑었습니다)` : '';
     el.sub.textContent =
-      `${when} 만들어진 공개 저장소${total} 가운데 스타가 많은 순으로 ${state.items.length}개` +
-      (skipped ? ` (스팸 의심 ${fmt(skipped)}개 제외)` : '');
+      `${when} 만들어진 공개 ${s.unit}${total} 가운데 ${s.score}가 많은 순으로 ${state.items.length}개` +
+      (skipped ? ` (스팸 의심 ${fmt(skipped)}개 제외)` : '') +
+      cut;
   }
 
   // ── 그리기: 순위표 ───────────────────────────────────────────
@@ -394,7 +479,7 @@
   }
 
   function gainHtml(r, span) {
-    const tip = span ? ` data-tip="최근 ${spanText(span)} 동안의 스타 변화"` : '';
+    const tip = span ? ` data-tip="최근 ${spanText(span)} 동안의 ${S().score} 변화"` : '';
     if (r.gain === null || r.gain === undefined) return `<div class="gain gain-none"${tip}>–</div>`;
     if (r.gain > 0) return `<div class="gain gain-up"${tip}>+${fmt(r.gain)}</div>`;
     if (r.gain < 0) return `<div class="gain gain-down"${tip}>−${fmt(-r.gain)}</div>`;
@@ -406,24 +491,33 @@
     const owner = slash < 0 ? '' : r.name.slice(0, slash + 1);
     const repo = slash < 0 ? r.name : r.name.slice(slash + 1);
     const url = r.url.startsWith('https://') ? r.url : '#';
-    const avatar = r.avatar.startsWith('https://') ? `${r.avatar}${r.avatar.includes('?') ? '&' : '?'}s=72` : '';
+    const avatar = r.avatar && r.avatar.startsWith('https://') ? `${r.avatar}${r.avatar.includes('?') ? '&' : '?'}s=72` : '';
     const pct = max ? Math.max(0.5, (r.stars / max) * 100) : 0;
     const share = max ? Math.round((r.stars / max) * 100) : 0;
-    return `<li class="row" data-id="${r.id}" data-stars="${r.stars}"${r.rank <= 3 ? ' data-top' : ''}>
+    const s = S();
+    // 출처마다 다른 곁들임 정보: GitHub은 포크 수, Hugging Face는 라이브러리와 다운로드 수(프로필 사진은 목록 API에 없어 머리글자로 대신한다).
+    const hf = state.src === 'hf';
+    const face = avatar
+      ? `<img class="avatar" src="${esc(avatar)}" alt="" width="36" height="36" loading="lazy" decoding="async">`
+      : `<span class="avatar${hf ? ' avatar-txt' : ''}" aria-hidden="true">${hf ? esc((owner || repo).charAt(0).toUpperCase()) : ''}</span>`;
+    const extra = hf
+      ? `${r.lib ? `<span>${esc(r.lib)}</span>` : ''}<span data-tip="최근 30일 동안의 다운로드 횟수">다운로드 ${fmt(r.downloads || 0)}</span>`
+      : `<span>포크 ${fmt(r.forks)}</span>`;
+    return `<li class="row" data-id="${esc(r.id)}" data-stars="${r.stars}"${r.rank <= 3 ? ' data-top' : ''}>
       <div class="rank"><span class="rank-num">${r.rank}</span>${moveHtml(r.move)}</div>
-      ${avatar ? `<img class="avatar" src="${esc(avatar)}" alt="" width="36" height="36" loading="lazy" decoding="async">` : '<span class="avatar"></span>'}
+      ${face}
       <div class="repo">
         <a class="name" href="${esc(url)}" target="_blank" rel="noopener"><span class="owner">${esc(owner)}</span><span class="repo-name">${esc(repo)}</span></a>
         ${r.desc ? `<p class="desc">${esc(r.desc)}</p>` : ''}
         <p class="meta">
           ${r.spam ? `<span class="flag" data-tip="${esc(spamRuleText())}">스팸 의심</span>` : ''}
           ${r.lang ? `<span class="lang">${langDot(r.lang)}${esc(r.lang)}</span>` : ''}
-          <span>포크 ${fmt(r.forks)}</span>
+          ${extra}
           <span>${ageText(r.created)}</span>
-          <span>하루 평균 ★ ${fmt(Math.round(pace(r, d.dataAt)))}</span>
+          <span>하루 평균 ${s.mark} ${fmt(Math.round(pace(r, d.dataAt)))}</span>
         </p>
       </div>
-      <div class="stars" data-tip="스타 ${fmt(r.stars)}개&#10;이 기간 1위의 ${share}%">
+      <div class="stars" data-tip="${s.score} ${fmt(r.stars)}개&#10;이 기간 1위의 ${share}%">
         <span class="bar"><i style="width:${pct.toFixed(2)}%"></i></span>
         <span class="stars-val">${fmt(r.stars)}</span>
       </div>
@@ -447,10 +541,11 @@
     if (state.view !== 'ready' || !d) {
       el.count.textContent = '';
       if (state.view === 'pending') {
-        const c = state.collector;
-        const limit = c ? c.rate.limit : 10;
-        if (state.live) showEmpty('이 기간의 순위를 받아 오는 중입니다', `GitHub 검색 한도(분당 ${limit}회)에 맞춰 차례로 받고 있습니다. 받는 즉시 여기에 나타납니다.`);
-        else showEmpty('아직 받아 오지 못한 기간입니다', `다음 수집 때 채워집니다(${everText()}마다).`);
+        const c = collector();
+        const limit = c && c.rate.limit ? c.rate.limit : 10;
+        if (!state.live) showEmpty('아직 받아 오지 못한 기간입니다', `다음 수집 때 채워집니다(${everText()}마다).`);
+        else if (state.src === 'hf') showEmpty('이 기간의 순위를 받아 오는 중입니다', 'Hugging Face 모델 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.');
+        else showEmpty('이 기간의 순위를 받아 오는 중입니다', `GitHub 검색 한도(분당 ${limit}회)에 맞춰 차례로 받고 있습니다. 받는 즉시 여기에 나타납니다.`);
       } else if (state.view === 'invalid' && !state.live) {
         showEmpty('준비되지 않은 기간입니다', '이 사이트는 기간 목록에 있는 것만 미리 만들어 둡니다.', { id: 'home', label: '최근 7일 보기' });
       } else if (state.view === 'invalid') {
@@ -467,16 +562,17 @@
     const total = state.items.length;
     el.count.textContent = items.length === total ? `${fmt(total)}개` : `${fmt(total)}개 중 ${fmt(items.length)}개`;
     el.gainHead.textContent = d.span ? `증가(${spanText(d.span)})` : '증가';
-    el.gainHead.dataset.tip = d.span
-      ? `최근 ${spanText(d.span)} 동안 늘어난 스타입니다. 서버가 쌓은 스냅샷과 비교합니다.`
-      : '서버가 이 기간을 10분 넘게 지켜본 뒤부터 표시됩니다.';
+    const s = S();
+    if (d.span) el.gainHead.dataset.tip = `최근 ${spanText(d.span)} 동안 늘어난 ${s.score} 수입니다. 앞서 수집해 둔 스냅샷과 비교합니다.`;
+    else if (state.live) el.gainHead.dataset.tip = '서버가 이 기간을 10분 넘게 지켜본 뒤부터 표시됩니다.';
+    else el.gainHead.dataset.tip = '다음 수집 때부터, 앞서 수집한 값과 비교해 표시됩니다.';
 
     if (total === 0 && d.items.length > 0) {
       return showEmpty('스팸으로 의심되는 저장소뿐입니다', '숨기기를 끄면 볼 수 있습니다.', { id: 'showspam', label: '스팸 의심도 보기' });
     }
-    if (total === 0) return showEmpty('이 기간에 만들어진 저장소가 아직 없습니다', '');
+    if (total === 0) return showEmpty(s.none, d.cut ? `${s.score} ${fmt(d.cut)}개 이상인 것까지만 훑었습니다.` : '');
     if (items.length === 0) {
-      return showEmpty('조건에 맞는 저장소가 없습니다', '언어나 검색어를 바꿔 보세요.', { id: 'clear', label: '조건 지우기' });
+      return showEmpty(s.noMatch[0], s.noMatch[1], { id: 'clear', label: '조건 지우기' });
     }
 
     const animate = live && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -570,10 +666,11 @@
     const top = stats.slice(0, 8);
     const rest = stats.slice(8);
     const max = top[0].n;
+    const { unit, score, facet } = S();
     let html = top
       .map((s) => {
         const share = Math.round((s.n / total) * 100);
-        return `<button class="lang-row" type="button" data-lang="${esc(s.lang)}" aria-pressed="${s.lang === state.lang}" data-tip="${esc(s.lang)}&#10;저장소 ${s.n}개 (${share}%)&#10;스타 합계 ${fmt(s.stars)}" aria-label="${esc(s.lang)}, 저장소 ${s.n}개">
+        return `<button class="lang-row" type="button" data-lang="${esc(s.lang)}" aria-pressed="${s.lang === state.lang}" data-tip="${esc(s.lang)}&#10;${unit} ${s.n}개 (${share}%)&#10;${score} 합계 ${fmt(s.stars)}" aria-label="${esc(s.lang)}, ${unit} ${s.n}개">
           <span class="lang-name">${langDot(s.lang)}<span>${esc(s.lang)}</span></span>
           <span class="lang-bar"><i style="width:${((s.n / max) * 100).toFixed(1)}%"></i></span>
           <span class="lang-n">${s.n}</span>
@@ -583,7 +680,7 @@
     if (rest.length) {
       const n = rest.reduce((sum, s) => sum + s.n, 0);
       html += `<div class="lang-row" data-tip="${esc(rest.map((s) => `${s.lang} ${s.n}`).join(', '))}">
-        <span class="lang-name"><i class="lang-dot"></i><span>그 밖 ${rest.length}개 언어</span></span>
+        <span class="lang-name">${state.src === 'gh' ? '<i class="lang-dot"></i>' : ''}<span>그 밖 ${rest.length}개 ${facet}</span></span>
         <span class="lang-bar"><i style="width:${((n / max) * 100).toFixed(1)}%;max-width:100%"></i></span>
         <span class="lang-n">${n}</span>
       </div>`;
@@ -676,8 +773,8 @@
       const h = (b.n / top) * ih;
       const r = Math.min(4, bw / 2, h);
       const tip = b.n
-        ? `${b.long}&#10;순위에 든 저장소 ${b.n}개&#10;그중 1위 ${esc(b.top.name)} ★ ${fmt(b.top.stars)}`
-        : `${b.long}&#10;순위에 든 저장소 없음`;
+        ? `${b.long}&#10;순위에 든 ${S().unit} ${b.n}개&#10;그중 1위 ${esc(b.top.name)} ${S().mark} ${fmt(b.top.stars)}`
+        : `${b.long}&#10;순위에 든 ${S().unit} 없음`;
       // 위쪽(데이터 끝)만 둥글리고 기준선 쪽은 각지게 둔다.
       const bar = b.n
         ? `<path class="col-bar" d="M${x},${y(0)} V${y(0) - h + r} Q${x},${y(0) - h} ${x + r},${y(0) - h} H${x + bw - r} Q${x + bw},${y(0) - h} ${x + bw},${y(0) - h + r} V${y(0)} Z"/>`
@@ -696,7 +793,7 @@
     });
 
     const peak = bins.reduce((a, b) => (b.n > a.n ? b : a));
-    el.hist.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="생성 시점별 저장소 수. 가장 많은 구간은 ${peak.long}, ${peak.n}개">${svg}</svg>`;
+    el.hist.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="생성 시점별 ${S().unit} 수. 가장 많은 구간은 ${peak.long}, ${peak.n}개">${svg}</svg>`;
   }
 
   // ── 그리기: 상태 ─────────────────────────────────────────────
@@ -736,8 +833,9 @@
     rows.push(['수집 방식', `GitHub Actions, ${everText()}마다`]);
     let have = 0;
     let all = 0;
+    const sm = metaOf();
     for (const type of TYPES) {
-      for (const b of m.types[type]) {
+      for (const b of sm ? sm.types[type] : []) {
         all += 1;
         if (b.hasData) have += 1;
       }
@@ -751,7 +849,7 @@
   function renderStatus() {
     if (!state.live && state.meta) return renderStaticStatus();
     const st = currentStatus();
-    const c = state.collector;
+    const c = collector();
     const rows = [];
     rows.push(['마지막 확인', st && st.fetchedAt ? rel(st.fetchedAt) : '아직 없음']);
     if (st && st.dataAt) rows.push(['순위가 바뀐 때', rel(st.dataAt)]);
@@ -766,7 +864,14 @@
     }
     rows.push(['다음 확인', next]);
 
-    if (c) {
+    if (c && state.src === 'hf') {
+      // Hugging Face는 기간마다 따로 받지 않고 목록을 한 번 훑어 모든 기간을 함께 갱신한다.
+      const left = c.rate.remaining === null || c.rate.remaining === undefined ? '' : ` 중 ${c.rate.remaining}회 남음`;
+      if (c.running && c.progress) rows.push(['훑는 중', `${c.progress.pages}쪽째`]);
+      if (c.rate.limit) rows.push(['Hugging Face 한도', `${Math.round((c.rate.window || 300) / 60)}분에 ${c.rate.limit}회${left}`]);
+      rows.push(['Hugging Face 인증', c.authenticated ? '토큰 사용' : '토큰 없음']);
+      rows.push(['받아 둔 기간', `${c.eager - c.missing} / ${c.eager}`]);
+    } else if (c) {
       const left = c.rate.remaining === null || c.rate.remaining === undefined ? '' : ` 중 ${c.rate.remaining}회 남음`;
       rows.push(['GitHub 검색 한도', `분당 ${c.rate.limit}회${left}`]);
       rows.push(['GitHub 인증', c.authenticated ? '토큰 사용' : '토큰 없음']);
@@ -817,6 +922,14 @@
     renderBoard();
   }
 
+  el.sources.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-src]');
+    if (!b || b.dataset.src === state.src) return;
+    // 보던 기간이 저쪽 목록에도 있으면 그대로 가고, 없으면 최근 구간으로 간다.
+    const m = metaOf(b.dataset.src);
+    const same = m && m.types[state.type].some((d) => d.key === state.key);
+    go(state.type, same ? state.key : 'rolling', b.dataset.src);
+  });
   el.types.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-type]');
     if (b) go(b.dataset.type, 'rolling');
@@ -854,7 +967,7 @@
   el.empty.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-action]');
     if (!b) return;
-    if (b.dataset.action === 'home') go('weekly', 'rolling');
+    if (b.dataset.action === 'home') go('weekly', 'rolling', metaOf() ? state.src : 'gh');
     if (b.dataset.action === 'showspam') setHideSpam(false);
     if (b.dataset.action === 'clear') {
       state.q = '';
@@ -867,7 +980,7 @@
   el.refreshBtn.addEventListener('click', async () => {
     let text;
     try {
-      const res = await fetch(`api/refresh?type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
+      const res = await fetch(`api/refresh?src=${state.src}&type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
       const body = await res.json();
       if (res.ok) text = '갱신을 요청했습니다';
       else if (body.reason === 'cooldown') text = `방금 확인했습니다. ${Math.ceil(body.retryInMs / 1000)}초 뒤에 다시 누를 수 있습니다`;
@@ -923,7 +1036,17 @@
   }).observe(el.hist);
 
   window.addEventListener('hashchange', () => {
+    const before = state.src;
     readHash();
+    if (state.src !== before) {
+      // 출처가 바뀌면 낱말(스타/좋아요, 언어/작업)이 달라지므로, 이전 출처의 순위를 새 머리글 아래에 남겨 두지 않는다.
+      state.lang = '';
+      state.view = 'loading';
+      state.data = null;
+      state.dataId = '';
+      applySource();
+      renderAll();
+    }
     renderNav();
     renderSub();
     loadChart();
@@ -949,6 +1072,7 @@
     /* 저장소를 못 읽으면 기본값(숨김)으로 둔다 */
   }
   readHash();
+  applySource();
   renderAll();
 
   // 기간 목록을 먼저 받아 어느 방식인지 안 다음, 실시간 연결을 맺거나(서버) 주기적으로 확인한다(정적 사이트).

@@ -1,8 +1,8 @@
 'use strict';
 
 // 로컬 서버 방식: 백그라운드 수집기를 돌리면서 화면에 실시간으로 밀어 준다.
-// 화면이 읽는 주소(data/meta.json, data/<type>.<key>.json)는 정적 사이트 빌드(lib/build.js)가
-// 써 내는 파일과 같아서, 같은 화면 코드가 두 방식 모두에서 돈다. 서버 방식에만 있는 것은
+// 화면이 읽는 주소(data/meta.json, data/<type>.<key>.json, data/hf/<type>.<key>.json)는 정적 사이트 빌드
+// (lib/build.js)가 써 내는 파일과 같아서, 같은 화면 코드가 두 방식 모두에서 돈다. 서버 방식에만 있는 것은
 // 실시간 스트림(api/events)과 수동 갱신(api/refresh)이다.
 
 const http = require('node:http');
@@ -20,10 +20,19 @@ const STATIC = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
 };
-const CHART_PATH = new RegExp(`^/data/(${periods.TYPES.join('|')})\\.([\\w-]+)\\.json$`);
+const CHART_PATH = new RegExp(`^/data/(hf/)?(${periods.TYPES.join('|')})\\.([\\w-]+)\\.json$`);
 
-/** HTTP 서버를 만든다(아직 듣지는 않는다). */
-function createApp({ store, collector }) {
+/**
+ * HTTP 서버를 만든다(아직 듣지는 않는다).
+ * @param {object} o
+ * @param {object} o.store, o.collector GitHub 쪽 저장소와 수집기
+ * @param {{store: object, collector: object}} [o.hf] Hugging Face 쪽(없으면 그 탭 없이 돈다)
+ */
+function createApp({ store, collector, hf = null }) {
+  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh', Hugging Face를 'hf'로 부른다.
+  const sources = { gh: { store, collector } };
+  if (hf) sources.hf = hf;
+
   // ── 실시간 푸시(SSE) ─────────────────────────────────────────────
   const clients = new Set();
 
@@ -33,20 +42,26 @@ function createApp({ store, collector }) {
     for (const res of clients) res.write(frame);
   }
 
-  const meta = () => ({ ...collector.meta(), live: true });
+  const meta = () => ({ ...collector.meta(), live: true, ...(hf ? { hf: hf.collector.meta() } : {}) });
 
-  collector.on('bucket', (status, changed) => push('bucket', { ...status, changed }));
+  for (const [src, s] of Object.entries(sources)) {
+    s.collector.on('bucket', (status, changed) => push('bucket', { ...status, changed, src }));
 
-  // 수집기 상태는 자주 바뀌므로 0.5초에 한 번만 내보낸다.
-  let statusTimer = null;
-  collector.on('collector', () => {
-    if (statusTimer) return;
-    statusTimer = setTimeout(() => {
-      statusTimer = null;
-      push('collector', collector.status());
-    }, 500);
-    statusTimer.unref();
-  });
+    // 수집기 상태는 자주 바뀌므로 0.5초에 한 번만 내보낸다.
+    let statusTimer = null;
+    s.collector.on('collector', () => {
+      if (statusTimer) return;
+      statusTimer = setTimeout(() => {
+        statusTimer = null;
+        push('collector', { ...s.collector.status(), src });
+      }, 500);
+      statusTimer.unref();
+    });
+  }
+
+  const setViewers = (n) => {
+    for (const s of Object.values(sources)) s.collector.setViewers(n);
+  };
 
   const pinger = setInterval(() => {
     for (const res of clients) res.write(': ping\n\n');
@@ -62,10 +77,10 @@ function createApp({ store, collector }) {
     });
     res.write(`retry: 3000\n\nevent: hello\ndata: ${JSON.stringify(meta())}\n\n`);
     clients.add(res);
-    collector.setViewers(clients.size);
+    setViewers(clients.size);
     req.on('close', () => {
       clients.delete(res);
-      collector.setViewers(clients.size);
+      setViewers(clients.size);
     });
   }
 
@@ -84,11 +99,11 @@ function createApp({ store, collector }) {
     res.end(body);
   }
 
-  function sendChart(req, res, type, key) {
-    const touched = collector.request(type, key); // 오래됐으면 뒤에서 갱신을 건다(화면은 기다리지 않는다)
+  function sendChart(req, res, source, type, key) {
+    const touched = source.collector.request(type, key); // 오래됐으면 뒤에서 갱신을 건다(화면은 기다리지 않는다)
     if (!touched.ok) return sendJson(req, res, 404, { error: '없는 기간입니다' });
 
-    const b = store.get(type, key);
+    const b = source.store.get(type, key);
     if (!b) return sendJson(req, res, 202, { pending: true });
 
     const headers = {
@@ -159,7 +174,11 @@ function createApp({ store, collector }) {
       if (pathname === '/api/events' && req.method === 'GET') return openStream(req, res);
       if (pathname === '/data/meta.json') return sendJson(req, res, 200, meta());
       const chart = CHART_PATH.exec(pathname);
-      if (chart) return sendChart(req, res, chart[1], chart[2]);
+      if (chart) {
+        const source = sources[chart[1] ? 'hf' : 'gh'];
+        if (!source) return sendJson(req, res, 404, { error: 'not found' });
+        return sendChart(req, res, source, chart[2], chart[3]);
+      }
       return sendStatic(req, res, pathname);
     }
 
@@ -168,7 +187,8 @@ function createApp({ store, collector }) {
       if (!sameOrigin(req)) return sendJson(req, res, 403, { error: 'forbidden' });
       const type = url.searchParams.get('type') || '';
       const key = url.searchParams.get('key') || '';
-      const result = collector.request(type, key, { force: true });
+      const source = sources[url.searchParams.get('src') || 'gh'];
+      const result = source ? source.collector.request(type, key, { force: true }) : { ok: false, reason: 'invalid' };
       return sendJson(req, res, result.ok ? 202 : result.reason === 'invalid' ? 404 : 429, result);
     }
 
@@ -191,7 +211,15 @@ function main() {
   const store = new Store(cfg);
   const cached = store.load();
   const collector = new Collector({ cfg, store });
-  const { server, close } = createApp({ store, collector });
+
+  let hf = null;
+  if (cfg.hf) {
+    const { HfCollector, storeConfig } = require('./lib/hfcollector');
+    const hfStore = new Store(storeConfig(cfg));
+    hfStore.load();
+    hf = { store: hfStore, collector: new HfCollector({ cfg, store: hfStore }) };
+  }
+  const { server, close } = createApp({ store, collector, hf });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
@@ -204,6 +232,7 @@ function main() {
 
   server.listen(cfg.port, cfg.host, () => {
     collector.start();
+    if (hf) hf.collector.start();
     const s = collector.status();
     console.log(`GitHub 베스트 대시보드  http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}`);
     console.log(`  캐시에서 불러온 기간 ${cached}개, 새로 받을 기간 ${s.missing}개`);
@@ -213,6 +242,7 @@ function main() {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
       collector.stop();
+      if (hf) hf.collector.stop();
       close();
       setTimeout(() => process.exit(0), 500).unref();
     });
