@@ -100,6 +100,8 @@
       ],
     },
   };
+  // 일부 출처에만 있는 정렬: 포크 수는 GitHub에만, 다운로드 수는 Hugging Face의 모델과 데이터셋에만 있다(Space에는 없다).
+  const EXTRA_SORTS = { forks: ['gh'], downloads: ['hf', 'hfd'] };
   const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
   // GitHub이 언어마다 쓰는 색(linguist). 항상 언어 이름과 함께 표시한다.
@@ -305,9 +307,12 @@
     el.scoreHead.textContent = s.score;
     el.seg.querySelector('[data-sort="rank"]').textContent = s.rankSort;
     el.seg.querySelector('[data-sort="gain"]').textContent = s.gainSort;
-    // 포크 수는 GitHub에만 있다. 포크순으로 보다가 다른 출처로 가면 기본 정렬로 돌아간다.
-    el.seg.querySelector('[data-sort="forks"]').hidden = state.src !== 'gh';
-    if (state.src !== 'gh' && state.sort === 'forks') state.sort = 'rank';
+    // 그 수가 없는 출처에서는 단추를 숨기고, 그 정렬로 보다가 그런 출처로 가면 기본 정렬로 돌아간다.
+    for (const [sort, srcs] of Object.entries(EXTRA_SORTS)) {
+      const has = srcs.includes(state.src);
+      el.seg.querySelector(`[data-sort="${sort}"]`).hidden = !has;
+      if (!has && state.sort === sort) state.sort = 'rank';
+    }
     for (const x of el.seg.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x.dataset.sort === state.sort));
     el.facetLabel.textContent = s.facet;
     el.search.placeholder = s.searchHint;
@@ -605,6 +610,8 @@
       items = [...items].sort((a, b) => pace(b, d.dataAt) - pace(a, d.dataAt));
     } else if (state.sort === 'forks') {
       items = [...items].sort((a, b) => (b.forks || 0) - (a.forks || 0) || a.rank - b.rank);
+    } else if (state.sort === 'downloads') {
+      items = [...items].sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || a.rank - b.rank);
     }
     return items;
   }
