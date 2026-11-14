@@ -123,6 +123,7 @@
   const $ = (sel) => document.querySelector(sel);
   const el = {
     live: $('#live'), liveText: $('#liveText'), themeBtn: $('#themeBtn'),
+    installBtn: $('#installBtn'), installHelp: $('#installHelp'), themeColor: $('#themeColor'),
     types: $('.types'), prev: $('#prevBtn'), next: $('#nextBtn'), period: $('#periodSelect'), sub: $('#periodSub'),
     seg: $('.seg'), lang: $('#langSelect'), search: $('#search'), count: $('#count'),
     notice: $('#notice'), cols: $('#cols'), gainHead: $('#gainHead'), rows: $('#rows'), empty: $('#empty'),
@@ -613,9 +614,9 @@
       items = [...items].sort((a, b) => (b.forks || 0) - (a.forks || 0) || a.rank - b.rank);
     } else if (state.sort === 'downloads') {
       items = [...items].sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || a.rank - b.rank);
-    }
     } else if (state.sort === 'comments') {
       items = [...items].sort((a, b) => (b.comments || 0) - (a.comments || 0) || a.rank - b.rank);
+    }
     return items;
   }
 
@@ -1215,6 +1216,59 @@
     } catch {
       /* 저장이 막혀 있어도 이번 화면에는 적용된다 */
     }
+    syncThemeColor();
+  });
+
+  // 브라우저 위쪽 띠(홈 화면에서 열었을 때는 상태 표시줄)의 색을 지금 화면 모드의 바탕색에 맞춘다.
+  function syncThemeColor() {
+    const page = getComputedStyle(document.documentElement).getPropertyValue('--page').trim();
+    if (page) el.themeColor.content = page;
+  }
+  syncThemeColor();
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', syncThemeColor); // 기기의 화면 모드가 바뀔 때
+
+  // ── 홈 화면에 추가 ───────────────────────────────────────────
+  // 브라우저가 설치할 수 있다고 알려 오면(beforeinstallprompt: Chrome, Edge, 삼성 인터넷 등) 단추를 보이고, 누르면 그 브라우저의 설치 창을 띄운다.
+  // iOS에는 그 신호가 없고 공유 메뉴의 "홈 화면에 추가"로만 되므로, 단추를 누르면 그 방법을 알려 준다(.install-help).
+  // 둘 다 아닌 브라우저(PC의 Firefox 등)와 이미 홈 화면에서 연 화면에는 단추가 나타나지 않는다.
+  let installEvent = null;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // 뒤쪽은 PC인 척하는 iPad
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const showHelp = (on) => {
+    el.installHelp.hidden = !on;
+    el.installBtn.setAttribute('aria-expanded', String(on));
+  };
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // 브라우저가 스스로 띄우는 알림 대신 이 단추로 띄운다
+    installEvent = e;
+    el.installBtn.hidden = false;
+  });
+  window.addEventListener('appinstalled', () => {
+    installEvent = null;
+    el.installBtn.hidden = true;
+  });
+  if (ios && !standalone) {
+    el.installBtn.hidden = false;
+    delete el.installBtn.dataset.tip; // 누르면 안내가 뜨므로 말풍선은 겹치지 않게 뺀다
+    showHelp(false);
+  }
+  el.installBtn.addEventListener('click', () => {
+    if (!installEvent) {
+      showHelp(el.installHelp.hidden);
+      return;
+    }
+    const e = installEvent;
+    installEvent = null; // 설치 창은 신호 하나에 한 번만 띄울 수 있다
+    el.installBtn.hidden = true; // 그만두면 브라우저가 신호를 다시 보내고, 그때 단추가 다시 나타난다
+    Promise.resolve(e.prompt()).catch(() => {});
+  });
+  // 안내는 바깥을 누르거나 Esc를 누르면 닫힌다.
+  document.addEventListener('pointerdown', (e) => {
+    if (!el.installHelp.hidden && !e.target.closest('#installHelp, #installBtn')) showHelp(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.installHelp.hidden) showHelp(false);
   });
 
   // 말풍선: data-tip이 달린 요소 위에 올리거나 초점을 주면 뜬다.

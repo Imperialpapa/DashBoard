@@ -449,6 +449,22 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(r.status, 200);
     assert.ok(!/(?:src|href)="\/(?!\/)/.test(html), '화면 파일 주소는 상대 경로여야 한다(하위 경로 배포)');
 
+    // 홈 화면에 추가: 화면이 가리키는 manifest와, 거기 적힌 아이콘이 적힌 크기대로 나간다.
+    assert.match(html, /<link rel="manifest" href="manifest\.webmanifest">/);
+    assert.match(html, /<link rel="apple-touch-icon" href="apple-touch-icon\.png">/);
+    assert.match(html, /<button class="install-btn" id="installBtn" type="button" hidden /); // 추가할 수 있는 브라우저에서만 app.js가 보여 준다
+    r = await get('/manifest.webmanifest');
+    assert.match(r.headers.get('content-type'), /^application\/manifest\+json/);
+    const manifest = await r.json();
+    assert.deepEqual([manifest.start_url, manifest.scope, manifest.display], ['./', './', 'standalone']); // 하위 경로 배포에서도 맞게 상대 주소
+    assert.deepEqual(manifest.icons.map((i) => `${i.sizes} ${i.purpose || 'any'}`), ['192x192 any', '512x512 any', '512x512 maskable']);
+    for (const icon of [...manifest.icons, { src: 'apple-touch-icon.png', sizes: '180x180' }]) {
+      r = await get(`/${icon.src}`);
+      const png = Buffer.from(await r.arrayBuffer());
+      assert.deepEqual([r.status, r.headers.get('content-type'), png.subarray(1, 4).toString()], [200, 'image/png', 'PNG'], icon.src);
+      assert.equal(`${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`, icon.sizes, icon.src);
+    }
+
     r = await get('/api/refresh?type=weekly&key=rolling', { method: 'POST', headers: { Origin: 'http://evil.example' } });
     assert.equal(r.status, 403);
     r = await get('/api/refresh?type=weekly&key=rolling', { method: 'POST' });
@@ -464,7 +480,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
 
     close();
     server.closeAllConnections();
-    ok('server: data/ 주소, ETag, 대기·없는 기간, 수동 갱신 보호, 실시간 스트림');
+    ok('server: data/ 주소, ETag, 대기·없는 기간, 홈 화면 추가용 manifest와 아이콘, 수동 갱신 보호, 실시간 스트림');
   }
 
   // 11) 정적 사이트 빌드: 써 내는 파일, 지난 배포본에서 이어받기
@@ -479,7 +495,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const r1 = await build({ cfg: cfgA, out: out1, search, ...quiet });
     // 주간 4(최근 7일·이번 주·지난 2주) + 월간 4 + 연간 3(최근 365일·올해·작년)
     assert.deepEqual([r1.written, r1.ran, r1.failed, r1.left, r1.loaded], [11, 11, 0, 0, 0]);
-    for (const f of ['index.html', 'app.js', 'styles.css', 'favicon.svg', 'data/meta.json', 'data/weekly.rolling.json', 'data/state/weekly.rolling.json']) {
+    for (const f of ['index.html', 'app.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'data/meta.json', 'data/weekly.rolling.json', 'data/state/weekly.rolling.json']) {
       assert.ok(fs.existsSync(path.join(out1, f)), f);
     }
     const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));

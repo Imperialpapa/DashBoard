@@ -18,6 +18,12 @@ const STATIC = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
+  // 홈 화면에 추가: 이름·아이콘 목록과 아이콘들
+  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
+  '/icon-192.png': ['icon-192.png', 'image/png'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
+  '/icon-maskable-512.png': ['icon-maskable-512.png', 'image/png'],
+  '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
 };
 // data/<종류>.<키>.json (GitHub), data/<출처>/<종류>.<키>.json (hf, hn, as …). 종류와 키가 실제로 있는지는 수집기가 판단한다.
 const CHART_PATH = new RegExp(`^/data/(?:(${registry.NAMES.join('|')})/)?([a-z]+)\\.([\\w-]+)\\.json$`);
@@ -144,7 +150,7 @@ function createApp({ store, collector, extra = {} }) {
       fs.readFile(file, (readErr, raw) => {
         if (readErr) return sendJson(req, res, 500, { error: 'read failed' });
         let body = raw;
-        if (wantsGzip(req) && entry[1] !== 'image/svg+xml') {
+        if (wantsGzip(req) && !entry[1].startsWith('image/')) {
           body = zlib.gzipSync(raw);
           headers['Content-Encoding'] = 'gzip';
         }

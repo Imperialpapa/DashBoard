@@ -151,6 +151,7 @@ a {
 }
 
 .top-in {
+  position: relative; /* 홈 화면 추가 안내(.install-help)가 이 아래에 뜬다 */
   display: flex;
   align-items: center;
   gap: 16px;
@@ -229,6 +230,51 @@ a {
 
 .icon-btn:hover {
   background: var(--wash);
+}
+
+/* 홈 화면에 추가: 넓은 화면에서는 글자까지, 좁은 화면(700px 이하)에서는 그림만 보인다 */
+.install-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.install-btn:hover {
+  background: var(--wash);
+}
+
+/* iOS에서 단추를 누르면 그 아래에 뜨는 안내(공유 메뉴로 추가하는 방법) */
+.install-help {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% - 4px);
+  right: clamp(16px, 3.2vw, 44px);
+  width: min(310px, calc(100% - 2 * clamp(16px, 3.2vw, 44px)));
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.install-help svg {
+  vertical-align: -2px;
+}
+
+.install-help b {
+  white-space: nowrap; /* "홈 화면에 추가"가 줄 사이에서 갈리지 않게 */
 }
 
 /* ── 기간 선택 ────────────────────────────────────────── */
@@ -1102,6 +1148,22 @@ button.lang-row:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* 단추가 둘이 되면 상태 문구 자리가 모자라므로 사이를 좁혀 조금 돌려준다 */
+  .top-in {
+    gap: 10px;
+  }
+
+  /* 홈 화면에 추가 단추는 그림만 남긴다(화면 모드 단추와 같은 크기) */
+  .install-btn {
+    justify-content: center;
+    width: 34px;
+    padding: 0;
+  }
+
+  .install-btn span {
+    display: none;
   }
 
   /* 출처 탭이 여럿이라 가로를 꽉 채워 나누고, 그래도 모자라면 줄을 바꾼다 */

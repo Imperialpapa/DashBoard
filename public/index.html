@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GitHub 베스트</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <!-- 홈 화면에 추가: 이름과 아이콘은 manifest에, iOS가 쓰는 아이콘과 이름은 아래 두 줄에 있다. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="베스트">
+  <!-- 브라우저 위쪽 띠의 색. 화면 모드에 맞춰 app.js가 바꾼다. -->
+  <meta name="theme-color" id="themeColor" content="#eef1f5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
@@ -30,9 +36,20 @@
         <span class="live-dot" aria-hidden="true"></span>
         <span id="liveText">서버에 연결하는 중</span>
       </p>
+      <!-- 홈 화면에 추가할 수 있는 브라우저에서만 app.js가 보여 준다. -->
+      <button class="install-btn" id="installBtn" type="button" hidden aria-label="홈 화면에 추가" data-tip="앱처럼 따로 열 수 있게 홈 화면(PC에서는 바탕 화면)에 추가합니다">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3"/><path d="M8 5.25v5.5M5.25 8h5.5"/></svg>
+        <span>홈 화면에 추가</span>
+      </button>
       <button class="icon-btn" id="themeBtn" type="button" aria-label="화면 모드 전환" data-tip="밝은 화면 / 어두운 화면">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM8 3v10A5 5 0 0 1 8 3Z"/></svg>
       </button>
+      <!-- iOS에는 설치 창이 없어, 단추를 누르면 공유 메뉴로 추가하는 방법을 알려 준다. -->
+      <p class="install-help" id="installHelp" role="status" hidden>
+        브라우저의 공유 단추
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9.5v-8M5 4.25 8 1.5l3 2.75M5 7H3.75a1 1 0 0 0-1 1v5.25a1 1 0 0 0 1 1h8.5a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H11"/></svg>
+        를 누른 뒤 목록에서 <b>홈 화면에 추가</b>를 고르세요. 공유 단추가 보이지 않으면 주소창 옆의 ··· 단추 안에 있습니다.
+      </p>
     </div>
   </header>
 
@@ -73,6 +90,7 @@
         <button type="button" data-sort="pace" aria-pressed="false">하루 평균순</button>
         <button type="button" data-sort="forks" aria-pressed="false" data-tip="순위표에 든 저장소를 포크가 많은 순으로 다시 줄 세웁니다">포크순</button>
         <button type="button" data-sort="downloads" aria-pressed="false" hidden data-tip="순위표에 든 것을 최근 30일 다운로드가 많은 순으로 다시 줄 세웁니다">다운로드순</button>
+        <button type="button" data-sort="comments" aria-pressed="false" hidden data-tip="순위표에 든 글을 댓글이 많은 순으로 다시 줄 세웁니다">댓글순</button>
       </div>
       <label class="field">
         <span class="field-label" id="facetLabel">언어</span>
@@ -90,7 +108,6 @@
       <label class="field field-grow">
         <span class="sr-only">검색</span>
         <input id="search" type="search" placeholder="저장소 이름이나 설명으로 찾기" autocomplete="off">
-        <button type="button" data-sort="comments" aria-pressed="false" hidden data-tip="순위표에 든 글을 댓글이 많은 순으로 다시 줄 세웁니다">댓글순</button>
       </label>
       <label class="check" id="spamLabel">
         <input id="spamToggle" type="checkbox" checked>
