@@ -431,7 +431,7 @@ a {
 }
 
 .seg button {
-  /* 단추가 넷(GitHub의 포크순, Hugging Face의 다운로드순)이어도 320px 화면에 한 줄로 담기게 좁힌다: 320px에서 5px, 413px부터 12px */
+  /* 단추가 넷(GitHub의 포크순, Hugging Face의 다운로드순, Hacker News의 댓글순)이어도 320px 화면에 한 줄로 담기게 좁힌다: 320px에서 5px, 413px부터 12px */
   padding: 4px clamp(5px, 7.5vw - 19px, 12px);
   border: 0;
   border-radius: 6px;

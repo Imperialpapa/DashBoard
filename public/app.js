@@ -100,8 +100,9 @@
       ],
     },
   };
-  // 일부 출처에만 있는 정렬: 포크 수는 GitHub에만, 다운로드 수는 Hugging Face의 모델과 데이터셋에만 있다(Space에는 없다).
-  const EXTRA_SORTS = { forks: ['gh'], downloads: ['hf', 'hfd'] };
+  // 일부 출처에만 있는 정렬: 포크 수는 GitHub에만, 다운로드 수는 Hugging Face의 모델과 데이터셋에만(Space에는 없다),
+  // 댓글 수는 Hacker News에만 있다.
+  const EXTRA_SORTS = { forks: ['gh'], downloads: ['hf', 'hfd'], comments: ['hn'] };
   const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
   // GitHub이 언어마다 쓰는 색(linguist). 항상 언어 이름과 함께 표시한다.
@@ -613,6 +614,8 @@
     } else if (state.sort === 'downloads') {
       items = [...items].sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || a.rank - b.rank);
     }
+    } else if (state.sort === 'comments') {
+      items = [...items].sort((a, b) => (b.comments || 0) - (a.comments || 0) || a.rank - b.rank);
     return items;
   }
 
