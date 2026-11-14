@@ -526,10 +526,29 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(closed.version, 1); // 지난 주는 그대로 다시 실린다
     assert.ok(fs.existsSync(path.join(out2, `data/weekly.${closed.key}.json`)));
 
-    // 배포본을 읽다가 오류가 나면(404가 아닌 실패) 쌓아 온 이력을 버리지 않도록 빌드를 멈춘다.
-    const broken = async () => ({ status: 503, ok: false, text: async () => '' });
+    // 배포본을 읽다가 잠깐 실패하면(503, 통신 오류) 그 파일만 다시 받아 끝까지 이어받는다.
+    const fast = { seedRetry: { wait: 1 } };
+    const asked = new Map();
+    const flaky = async (url) => {
+      const n = (asked.get(url) || 0) + 1;
+      asked.set(url, n);
+      if (n === 1 && url.endsWith('/meta.json')) throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } });
+      if (n === 1) return { status: 503, ok: false, text: async () => '' };
+      return served(out1)(url);
+    };
+    const said = [];
+    const r5 = await build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildE') }, out: path.join(TMP, 'site5'), seedUrl: 'https://example.test/site/', search, fetchImpl: flaky, ...fast, log: (s) => said.push(s) });
+    assert.deepEqual([r5.loaded, r5.ran, r5.written], [11, 6, 11]);
+    assert.deepEqual([asked.size, ...new Set(asked.values())], [12, 2]); // meta.json + 상태 11개를 두 번씩
+    assert.ok(said.some((s) => /data\/meta\.json.*fetch failed: ECONNRESET, 1\/3/.test(s)), said.join('\n'));
+    assert.ok(said.some((s) => /data\/state\/weekly\.rolling\.json.*HTTP 503, 1\/3/.test(s)));
+
+    // 다시 받아도 계속 실패하면(404가 아닌 실패) 쌓아 온 이력을 버리지 않도록 빌드를 멈춘다.
+    let tried = 0;
+    const broken = async () => { tried += 1; return { status: 503, ok: false, text: async () => '' }; };
     const out3 = path.join(TMP, 'site3');
-    await assert.rejects(build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildC') }, out: out3, seedUrl: 'https://example.test/site/', search, fetchImpl: broken, ...quiet }), /HTTP 503/);
+    await assert.rejects(build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildC') }, out: out3, seedUrl: 'https://example.test/site/', search, fetchImpl: broken, ...fast, ...quiet }), /data\/meta\.json: HTTP 503/);
+    assert.equal(tried, 4); // 처음 한 번 + 다시 세 번
     assert.equal(fs.existsSync(out3), false);
 
     // 아무것도 못 받았으면 빈 사이트를 내지 않는다.
@@ -538,7 +557,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const down = async () => { throw new GitHubError('GitHub에 연결하지 못했습니다 (ENOTFOUND)'); };
     await assert.rejects(build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildD') }, out: path.join(TMP, 'site4'), search: down, ...quiet }), /하나도 없습니다/);
     console.warn = warn;
-    ok('build: 써 내는 파일, 배포본에서 이어받기, 최근 구간만 재확인, 실패 시 덮어쓰지 않음');
+    ok('build: 써 내는 파일, 배포본에서 이어받기(잠깐 실패하면 다시 받기), 최근 구간만 재확인, 실패 시 덮어쓰지 않음');
   }
 
   // 12) Hugging Face: 좋아요순 목록을 훑어 기간에 나눠 담기
