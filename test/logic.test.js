@@ -452,7 +452,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 홈 화면에 추가: 화면이 가리키는 manifest와, 거기 적힌 아이콘이 적힌 크기대로 나간다.
     assert.match(html, /<link rel="manifest" href="manifest\.webmanifest">/);
     assert.match(html, /<link rel="apple-touch-icon" href="apple-touch-icon\.png">/);
-    assert.match(html, /<button class="install-btn" id="installBtn" type="button" hidden /); // 추가할 수 있는 브라우저에서만 app.js가 보여 준다
+    assert.match(html, /<button class="install-btn" id="installBtn" type="button" hidden /); // 휴대폰과, 설치 창을 띄울 수 있는 PC 브라우저에서 app.js가 보여 준다
     r = await get('/manifest.webmanifest');
     assert.match(r.headers.get('content-type'), /^application\/manifest\+json/);
     const manifest = await r.json();

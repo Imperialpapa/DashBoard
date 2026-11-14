@@ -1229,12 +1229,15 @@
   if (darkQuery.addEventListener) darkQuery.addEventListener('change', syncThemeColor); // 기기의 화면 모드가 바뀔 때
 
   // ── 홈 화면에 추가 ───────────────────────────────────────────
-  // 브라우저가 설치할 수 있다고 알려 오면(beforeinstallprompt: Chrome, Edge, 삼성 인터넷 등) 단추를 보이고, 누르면 그 브라우저의 설치 창을 띄운다.
-  // iOS에는 그 신호가 없고 공유 메뉴의 "홈 화면에 추가"로만 되므로, 단추를 누르면 그 방법을 알려 준다(.install-help).
-  // 둘 다 아닌 브라우저(PC의 Firefox 등)와 이미 홈 화면에서 연 화면에는 단추가 나타나지 않는다.
+  // 브라우저가 설치할 수 있다고 알려 오면(beforeinstallprompt: Chrome, Edge 등) 단추를 누를 때 그 브라우저의 설치 창을 띄운다.
+  // 휴대폰에서는 그 신호가 없어도 단추를 보이고, 누르면 브라우저 메뉴로 넣는 방법을 알려 준다(.install-help). 신호를 믿을 수 없어서다:
+  // iOS는 아예 보내지 않고, 삼성 인터넷도 보내지 않으며, 안드로이드 Chrome은 화면을 한 번 누르고 30초쯤 본 뒤에, 아직 추가하지 않았을 때만 보낸다.
+  // PC에서는 신호가 온 브라우저에서만 단추가 나타나고(Firefox 등에는 없다), 이미 홈 화면에서 연 화면에는 어디서도 나타나지 않는다.
   let installEvent = null;
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // 뒤쪽은 PC인 척하는 iPad
+  const android = /Android/i.test(navigator.userAgent);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const guided = (ios || android) && !standalone; // 신호가 없어도 방법을 알려 줄 수 있는 곳
   const showHelp = (on) => {
     el.installHelp.hidden = !on;
     el.installBtn.setAttribute('aria-expanded', String(on));
@@ -1247,20 +1250,23 @@
   window.addEventListener('appinstalled', () => {
     installEvent = null;
     el.installBtn.hidden = true;
+    showHelp(false);
   });
-  if (ios && !standalone) {
+  if (guided) {
     el.installBtn.hidden = false;
     delete el.installBtn.dataset.tip; // 누르면 안내가 뜨므로 말풍선은 겹치지 않게 뺀다
+    for (const p of el.installHelp.querySelectorAll('[data-os]')) p.hidden = p.dataset.os !== (ios ? 'ios' : 'android');
     showHelp(false);
   }
   el.installBtn.addEventListener('click', () => {
     if (!installEvent) {
-      showHelp(el.installHelp.hidden);
+      showHelp(el.installHelp.hidden); // 신호가 없으면 방법을 알려 준다(다시 누르면 닫힌다)
       return;
     }
     const e = installEvent;
     installEvent = null; // 설치 창은 신호 하나에 한 번만 띄울 수 있다
-    el.installBtn.hidden = true; // 그만두면 브라우저가 신호를 다시 보내고, 그때 단추가 다시 나타난다
+    showHelp(false);
+    if (!guided) el.installBtn.hidden = true; // PC: 그만두면 브라우저가 신호를 다시 보내고, 그때 단추가 다시 나타난다
     Promise.resolve(e.prompt()).catch(() => {});
   });
   // 안내는 바깥을 누르거나 Esc를 누르면 닫힌다.
