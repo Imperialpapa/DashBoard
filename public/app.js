@@ -3,7 +3,11 @@
 
   const DAY = 86_400_000;
   const CURRENT_LABEL = { weekly: '이번 주', monthly: '이번 달', yearly: '올해' };
-  const PERIOD_TYPES = [['weekly', '주간'], ['monthly', '월간'], ['yearly', '연간']];
+  // 기간으로 나누는 출처의 탭. 마지막 것은 전체 기간(만든 때를 가리지 않고 지금까지 가장 많이 받은 것)이고,
+  // 이름에 그 출처의 수를 붙인다: 최대 스타 / 최대 좋아요 / 최대 점수.
+  const periodTypes = (score) => [['weekly', '주간'], ['monthly', '월간'], ['yearly', '연간'], ['all', `최대 ${score}`]];
+  const ALL_KEY = 'time'; // 전체 기간의 키(#all/time). 하나뿐이다
+  const ALL_LABEL = '전체 기간';
   const COUNTRIES = { kr: '한국', us: '미국', jp: '일본', cn: '중국', gb: '영국', de: '독일', fr: '프랑스' };
 
   // 출처(탭)별 낱말과 문구. 화면 구조와 데이터 모양은 같고 부르는 이름만 다르다.
@@ -20,7 +24,7 @@
   // Hugging Face는 한 탭 안에서 모델·Space·데이터셋을 오간다. 셋은 받는 방식과 화면이 같고 낱말만 다르다.
   //   unitGa, unitEul: 조사를 붙인 꼴(모델이 / Space가)   facetOr: "작업 종류나 검색어를 바꿔 보세요"의 앞부분
   const hugging = ({ dir, sub, unit, unitGa, unitEul, facet, facetOr, note }) => ({
-    name: 'Hugging Face', title: 'Hugging Face 베스트', tab: 'hf', sub, dir, types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+    name: 'Hugging Face', title: 'Hugging Face 베스트', tab: 'hf', sub, dir, types: periodTypes('좋아요'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
     bucket: '기간', unit, score: '좋아요', mark: '♥', facet, noFacet: `${facet} 표시 없음`, made: '생성',
     pool: `만들어진 공개 ${unit}`, order: '좋아요가 많은 순',
     rankSort: '좋아요순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
@@ -31,14 +35,15 @@
     pending: ['이 기간의 순위를 받아 오는 중입니다', `Hugging Face ${unit} 목록을 좋아요순으로 훑고 있습니다. 끝나는 즉시 여기에 나타납니다.`],
     foot: [
       `순위는 해당 기간(UTC 기준)에 새로 만들어진 Hugging Face 공개 ${unitEul} 좋아요 수로 줄 세운 상위 100개입니다. 기간 안에 만들어진 것만 다루므로 좋아요 수가 곧 그 기간에 받은 좋아요입니다. 좋아요가 아주 적은 것까지는 훑지 않아서, 막 시작한 기간은 100개가 안 될 수 있습니다.`,
+      `"최대 좋아요" 탭은 만든 때를 가리지 않고, 지금까지 좋아요를 가장 많이 받은 공개 ${unit} 100개입니다.`,
       `증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. ${note}`,
-      '2022년 3월 이전에 만든 것은 만든 날짜가 모두 같은 날로 기록돼 있어, 2023년부터만 다룹니다.',
+      '2022년 3월 이전에 만든 것은 만든 날짜가 모두 같은 날로 기록돼 있어, 기간별 순위는 2023년부터만 다룹니다. "최대 좋아요" 탭에는 그런 것도 나오는데, 생성일은 그 기록된 날로 보입니다.',
     ],
   });
 
   const SOURCES = {
     gh: {
-      name: 'GitHub', title: 'GitHub 베스트', dir: '', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+      name: 'GitHub', title: 'GitHub 베스트', dir: '', types: periodTypes('스타'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '저장소', score: '스타', mark: '★', facet: '언어', noFacet: '언어 표시 없음', made: '생성',
       pool: '만들어진 공개 저장소', order: '스타가 많은 순',
       rankSort: '스타순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
@@ -48,6 +53,7 @@
       noMatch: ['조건에 맞는 저장소가 없습니다', '언어나 검색어를 바꿔 보세요.'],
       foot: [
         '순위는 해당 기간(UTC 기준)에 새로 만들어진 공개 저장소를 스타 수로 줄 세운 GitHub 검색 결과 상위 100개입니다. 포크는 빠집니다. 기간 안에 만들어진 저장소만 다루므로 스타 수가 곧 그 기간에 받은 스타입니다.',
+        '"최대 스타" 탭은 만든 때를 가리지 않고, 지금까지 스타를 가장 많이 받은 공개 저장소 100개입니다.',
         '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다.',
         '스타에 비해 포크가 거의 없는 저장소는 스타를 사들인 스팸으로 의심해 기본으로 숨기고, 그만큼 아래 순위를 더 받아 100개를 채웁니다. 숫자만 보는 어림 규칙이라 틀릴 수 있으니, 숨기기를 끄면 표시가 붙은 채로 모두 볼 수 있습니다.',
       ],
@@ -65,7 +71,7 @@
       note: '다운로드는 최근 30일 동안의 횟수이고, 형태는 데이터의 종류(text, image, audio 등)입니다.',
     }),
     hn: {
-      name: 'Hacker News', title: 'Hacker News 베스트', dir: 'hn/', types: PERIOD_TYPES, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+      name: 'Hacker News', title: 'Hacker News 베스트', dir: 'hn/', types: periodTypes('점수'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '글', score: '점수', scoreUnit: '점', mark: '▲', facet: '사이트', noFacet: '사이트 없음', made: '등록',
       pool: '올라온 글', order: '점수가 높은 순', plainName: true, searchFacet: true,
       rankSort: '점수순', gainSort: '최근 증가순', histTitle: '올라온 시점',
@@ -76,6 +82,7 @@
       pending: ['이 기간의 순위를 받아 오는 중입니다', 'Hacker News 검색으로 기간마다 상위 글을 받고 있습니다. 끝나는 즉시 여기에 나타납니다.'],
       foot: [
         '순위는 해당 기간(UTC 기준)에 Hacker News에 올라온 글을 점수로 줄 세운 상위 100개입니다. 기간 안에 올라온 글만 다루므로 점수가 곧 그 글이 받은 점수입니다. 채용 공고와 설문은 빠집니다.',
+        '"최대 점수" 탭은 올라온 때를 가리지 않고, 지금까지 점수를 가장 많이 받은 글 100개입니다.',
         '증가와 순위 변동은 앞서 수집해 둔 스냅샷(하루쯤 전까지)과 비교한 값입니다. 제목을 누르면 원문으로, "댓글"을 누르면 Hacker News의 토론으로 갑니다.',
         '순위와 점수는 Algolia가 제공하는 Hacker News 검색 API에서 받습니다. 오래된 글의 원문 주소는 사라졌을 수 있습니다.',
       ],
@@ -234,6 +241,10 @@
     const c = (m && m.country) || 'kr';
     return COUNTRIES[c] || c.toUpperCase();
   };
+  /** 전체 기간(최대 스타·좋아요·점수 탭)을 보고 있는지 */
+  const allTime = () => state.type === 'all';
+  /** 그 출처에서 한 종류를 처음 열 때의 키: 전체 기간은 하나뿐이고, 나머지는 그 출처의 기본 화면(최근 구간)이다. */
+  const firstKey = (src, type) => (type === 'all' ? ALL_KEY : SOURCES[src].home[1]);
   const currentDesc = () => listing().find((d) => d.key === state.key) || null;
   const currentStatus = () => state.status.get(currentId()) || null;
   const collector = () => state.collectors[state.src] || null;
@@ -264,6 +275,7 @@
     if ((m = /^(\d{4})-W(\d{2})$/.exec(key))) return `${m[1]}년 ${+m[2]}주차`;
     if ((m = /^(\d{4})-(\d{2})$/.exec(key))) return `${m[1]}년 ${+m[2]}월`;
     if (/^\d{4}$/.test(key)) return `${key}년`;
+    if (allTime() && key === ALL_KEY) return ALL_LABEL; // 목록을 받기 전에도 이름이 보이게
     return key;
   }
 
@@ -565,6 +577,7 @@
     }
     if (!d) {
       if (!desc) el.sub.innerHTML = '&nbsp;';
+      else if (allTime()) el.sub.textContent = '처음부터 지금까지';
       else if (desc.kind === 'rolling') el.sub.textContent = `${ymd(desc.from)}부터 지금까지`;
       else el.sub.textContent = `${desc.label}, ${ymd(desc.from)} – ${md(desc.to)}`;
       return;
@@ -572,7 +585,8 @@
     const kind = desc ? desc.kind : d.to ? 'closed' : 'rolling';
     const toText = d.to ? (d.to.slice(0, 4) === d.from.slice(0, 4) ? md(d.to) : ymd(d.to)) : '';
     let when;
-    if (kind === 'rolling') when = `${ymd(d.from)}부터 지금까지`;
+    if (allTime()) when = '지금까지'; // "지금까지 만들어진 공개 저장소 … 가운데 스타가 많은 순으로 100개"
+    else if (kind === 'rolling') when = `${ymd(d.from)}부터 지금까지`;
     else if (kind === 'current') when = `${desc.label}(${ymd(d.from)} – ${toText}), 지금까지`;
     else when = `${ymd(d.from)} – ${toText}에`;
     const total = d.total == null ? '' : d.approx ? ` 약 ${approxKo(d.total)}개` : ` ${fmt(d.total)}개`;
@@ -679,7 +693,7 @@
       : `<span class="bar"><i style="width:${pct.toFixed(2)}%"></i></span>`;
     const scoreTip = as
       ? `평가 ${fmt(r.stars)}개${r.rating ? `&#10;별점 ${r.rating.toFixed(1)}` : ''}&#10;${esc(countryName())} 스토어 기준`
-      : `${s.score} ${fmt(r.stars)}${s.scoreUnit || '개'}&#10;이 기간 1위의 ${share}%`;
+      : `${s.score} ${fmt(r.stars)}${s.scoreUnit || '개'}&#10;${allTime() ? '' : '이 기간 '}1위의 ${share}%`;
     const when = r.created ? `<span>${ageText(r.created, s.made)}</span>` : '';
     const perDay = r.created ? `<span>하루 평균 ${s.mark} ${paceText(pace(r, d.dataAt))}</span>` : '';
     return `<li class="row" data-id="${esc(r.id)}" data-stars="${r.stars}"${r.rank <= 3 ? ' data-top' : ''}>
@@ -881,6 +895,15 @@
       const year = new Date(now()).getUTCFullYear();
       const first = year - 9;
       bins.push({ start: -Infinity, end: Date.UTC(first, 0, 1), short: `~${first - 1}`, long: `${first - 1}년까지` });
+      for (let y = first; y <= year; y++) bins.push({ start: Date.UTC(y, 0, 1), end: Date.UTC(y + 1, 0, 1), short: String(y), long: `${y}년` });
+    } else if (allTime()) {
+      // 전체 기간: 순위에 든 것 가운데 가장 오래된 해부터 올해까지, 해마다 한 칸.
+      const year = new Date(now()).getUTCFullYear();
+      let first = year;
+      for (const r of state.items) {
+        const y = new Date(r.created).getUTCFullYear();
+        if (y < first) first = y; // 날짜가 없거나 깨진 것(NaN)은 건너뛴다
+      }
       for (let y = first; y <= year; y++) bins.push({ start: Date.UTC(y, 0, 1), end: Date.UTC(y + 1, 0, 1), short: String(y), long: `${y}년` });
     } else if (state.type === 'yearly') {
       let y = new Date(from).getUTCFullYear();
@@ -1114,10 +1137,10 @@
   /** 다른 출처로 간다. 보던 종류·기간이 저쪽에도 있으면 그대로 가고, 없으면 저쪽의 기본 화면으로 간다. */
   function switchTo(to) {
     const m = metaOf(to);
-    const [homeType, homeKey] = SOURCES[to].home;
+    const [homeType] = SOURCES[to].home;
     const type = SOURCES[to].types.some(([t]) => t === state.type) ? state.type : homeType;
     const same = type === state.type && m && (m.types[type] || []).some((d) => d.key === state.key);
-    go(type, same ? state.key : homeKey, to);
+    go(type, same ? state.key : firstKey(to, type), to);
   }
   el.sources.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-src]');
@@ -1132,8 +1155,9 @@
   el.types.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-type]');
     if (!b) return;
-    // 기간 종류(주간·월간·연간)를 바꾸면 최근 구간으로 가고, 차트 종류(무료·유료·매출)를 바꾸면 보던 카테고리를 유지한다.
-    go(b.dataset.type, state.src === 'as' ? state.key : S().home[1]);
+    // 기간 종류(주간·월간·연간)를 바꾸면 최근 구간으로(전체 기간은 하나뿐인 그 기간으로) 가고,
+    // 차트 종류(무료·유료·매출)를 바꾸면 보던 카테고리를 유지한다.
+    go(b.dataset.type, state.src === 'as' ? state.key : firstKey(state.src, b.dataset.type));
   });
   el.age.addEventListener('change', () => {
     state.age = Number(el.age.value) || 0;

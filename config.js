@@ -40,6 +40,7 @@ module.exports = {
     weekly: { rolling: HOUR, current: HOUR },
     monthly: { rolling: HOUR, current: HOUR },
     yearly: { rolling: HOUR, current: HOUR },
+    all: { rolling: HOUR }, // 전체 기간("최대 스타" 탭). 끝나지 않는 기간이라 rolling뿐이다
     recentClosed: 6 * HOUR, // 끝난 지 35일 이내
     closed: DAY, // 끝난 지 400일 이내
     archive: 7 * DAY, // 그보다 오래된 구간

@@ -47,7 +47,11 @@ const ok = (name) => {
   assert.equal(d('yearly', '2027', '2026-11-12T03:00:00Z'), null);
   assert.equal(d('weekly', 'rolling', '2026-11-12T03:00:00Z').from, '2026-11-05');
   assert.equal(d('weekly', '../x', '2026-11-12T03:00:00Z'), null);
-  ok('describe: 경계와 잘못된 키');
+  // 전체 기간: 하나뿐이고, 늘 진행 중이며, 시작 연도(firstYear)와 상관없다.
+  assert.deepEqual(d('all', 'time', '2026-11-12T03:00:00Z'), { type: 'all', key: 'time', kind: 'rolling', label: '전체 기간', from: '1970-01-01', to: null });
+  assert.deepEqual(periods.describe('all', 'time', at('2026-11-12T03:00:00Z'), 2030), d('all', 'time', '2026-11-12T03:00:00Z'));
+  assert.deepEqual([d('all', 'rolling', '2026-11-12T03:00:00Z'), d('all', '2026', '2026-11-12T03:00:00Z'), d('all', '../x', '2026-11-12T03:00:00Z')], [null, null, null]);
+  ok('describe: 경계와 잘못된 키, 전체 기간');
 
   // 연초: 1월 1일(금)은 ISO로 전년도 53주차
   const now = at('2027-01-01T05:00:00Z');
@@ -60,13 +64,22 @@ const ok = (name) => {
   assert.deepEqual(m.slice(0, 3).map((x) => x.key), ['rolling', '2027-01', '2026-12']);
   const y = periods.list('yearly', now, baseCfg);
   assert.deepEqual([y[1].key, y[y.length - 1].key], ['2027', '2008']);
-  ok('list: 연초 경계, 중복 없음, eager 개수');
+  const t = periods.list('all', now, baseCfg);
+  assert.deepEqual(t.map((x) => [x.key, x.kind, x.eager]), [['time', 'rolling', true]]);
+  assert.deepEqual(periods.TYPES, ['weekly', 'monthly', 'yearly', 'all']);
+  // 첫 수집 순서: 종류를 번갈아 최신 구간부터(전체 기간은 최근 구간들 바로 다음).
+  assert.deepEqual([w[0].order, m[0].order, y[0].order, t[0].order, w[1].order, y[1].order], [0, 1, 2, 3, 4, 6]);
+  ok('list: 연초 경계, 중복 없음, eager 개수, 전체 기간은 하나');
 
   const closed = d('monthly', '2026-10', '2026-11-12T03:00:00Z');
   assert.equal(periods.interval(closed, at('2026-11-12T03:00:00Z'), baseCfg), baseCfg.refresh.recentClosed);
   assert.equal(periods.interval(d('monthly', '2026-03', '2026-11-12T03:00:00Z'), at('2026-11-12T03:00:00Z'), baseCfg), baseCfg.refresh.closed);
   assert.equal(periods.interval(d('yearly', '2012', '2026-11-12T03:00:00Z'), at('2026-11-12T03:00:00Z'), baseCfg), baseCfg.refresh.archive);
   assert.equal(periods.query(closed), 'created:2026-10-01..2026-10-31');
+  // 전체 기간: 만든 때를 가리지 않는 질의가 되고, 최근 구간처럼 자주 다시 받는다.
+  const all = d('all', 'time', '2026-11-12T03:00:00Z');
+  assert.equal(periods.query(all), 'created:>=1970-01-01');
+  assert.equal(periods.interval(all, at('2026-11-12T03:00:00Z'), fullCfg), fullCfg.refresh.all.rolling);
   ok('interval / query');
 }
 
@@ -110,7 +123,13 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(calls.length, 3);
     assert.ok(calls[2].endsWith(`stars:>=${Math.floor(8010 * 0.8)}`));
     assert.equal(store.get('yearly', 'rolling').version, 1); // 내용이 같으면 버전은 그대로
-    ok('fetchBucket: incomplete → 하한 질의, 재사용, 변화 없으면 버전 유지');
+    // 전체 기간(최대 스타)도 같은 길로 받는다: 만든 때를 가리지 않는 넓은 질의 → 하한을 붙인 질의.
+    calls.length = 0;
+    await collector.run(job(collector, 'all', 'time'));
+    assert.deepEqual(calls, ['created:>=1970-01-01', 'created:>=1970-01-01 stars:>=4010']);
+    const top = store.get('all', 'time');
+    assert.deepEqual([top.from, top.to, top.total, top.approx, top.incomplete, top.items.length, top.items[0].stars, top.floor], ['1970-01-01', null, 76_000_000, true, false, 100, 9000, 8010]);
+    ok('fetchBucket: incomplete → 하한 질의, 재사용, 변화 없으면 버전 유지, 전체 기간');
   }
 
   // 2) 하한이 너무 높아 후보가 모자라면 넓은 질의부터 다시
@@ -221,15 +240,15 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
   // 6) 스케줄러: 우선순위와 수동 갱신 쿨다운
   {
     const { collector, calls } = setup('sched', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }));
-    // 처음에는 세 종류의 rolling·진행 중 구간(첫 화면용)을 먼저 받는다.
+    // 처음에는 종류마다 앞의 두 개(rolling·진행 중 구간, 그리고 하나뿐인 전체 기간)를 첫 화면용으로 먼저 받는다.
     const order = [];
     collector.on('bucket', (st) => { if (st.state === 'running') order.push(`${st.type}/${st.key}`); });
     collector.start();
     await sleep(8000); // tick이 1초 간격이므로 몇 개만 본다
     collector.stop();
-    assert.deepEqual(order.slice(0, 3), ['weekly/rolling', 'monthly/rolling', 'yearly/rolling']);
+    assert.deepEqual(order.slice(0, 4), ['weekly/rolling', 'monthly/rolling', 'yearly/rolling', 'all/time']);
     assert.ok(order.length >= 6, `ran ${order.length}`);
-    assert.ok(order.slice(3, 6).every((id) => !id.endsWith('rolling')));
+    assert.ok(order.slice(4, 6).every((id) => !id.endsWith('rolling')));
 
     // 사용자가 연 과거 구간은 맨 앞에 선다.
     const r = collector.request('monthly', '2015-07');
@@ -437,6 +456,10 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     r = await get('/data/weekly.rolling.json', { headers: { 'If-None-Match': etag } });
     assert.equal(r.status, 304);
     assert.equal((await get('/data/monthly.rolling.json')).status, 202); // 아직 받지 않은 기간
+    // 전체 기간(최대 스타)도 같은 주소 규칙을 따른다.
+    assert.deepEqual(meta.types.all.map((b) => [b.key, b.kind, b.label, b.from, b.to, b.hasData]), [['time', 'rolling', '전체 기간', '1970-01-01', null, false]]);
+    assert.equal((await get('/data/all.time.json')).status, 202);
+    assert.equal((await get('/data/all.rolling.json')).status, 404);
     assert.equal((await get('/data/weekly.2099-W01.json')).status, 404);
     assert.equal((await get('/data/bogus.rolling.json')).status, 404);
     assert.equal((await get('/data/state/weekly.rolling.json')).status, 404);
@@ -450,6 +473,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.ok(!/(?:src|href)="\/(?!\/)/.test(html), '화면 파일 주소는 상대 경로여야 한다(하위 경로 배포)');
 
     // 홈 화면에 추가: 화면이 가리키는 manifest와, 거기 적힌 아이콘이 적힌 크기대로 나간다.
+    assert.match(html, /<button type="button" data-type="all" aria-pressed="false">최대 스타<\/button>/); // 주간·월간·연간 옆의 전체 기간 탭
     assert.match(html, /<link rel="manifest" href="manifest\.webmanifest">/);
     assert.match(html, /<link rel="apple-touch-icon" href="apple-touch-icon\.png">/);
     assert.match(html, /<button class="install-btn" id="installBtn" type="button" hidden /); // 휴대폰과, 설치 창을 띄울 수 있는 PC 브라우저에서 app.js가 보여 준다
@@ -493,9 +517,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const cfgA = { ...baseCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, 'buildA'), listed: { weekly: 2, monthly: 2 }, firstYear: new Date().getUTCFullYear() - 1, static: { every: 15 * 60_000, budget: 60_000 } };
     const out1 = path.join(TMP, 'site1');
     const r1 = await build({ cfg: cfgA, out: out1, search, ...quiet });
-    // 주간 4(최근 7일·이번 주·지난 2주) + 월간 4 + 연간 3(최근 365일·올해·작년)
-    assert.deepEqual([r1.written, r1.ran, r1.failed, r1.left, r1.loaded], [11, 11, 0, 0, 0]);
-    for (const f of ['index.html', 'app.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'data/meta.json', 'data/weekly.rolling.json', 'data/state/weekly.rolling.json']) {
+    // 주간 4(최근 7일·이번 주·지난 2주) + 월간 4 + 연간 3(최근 365일·올해·작년) + 전체 기간 1
+    assert.deepEqual([r1.written, r1.ran, r1.failed, r1.left, r1.loaded], [12, 12, 0, 0, 0]);
+    for (const f of ['index.html', 'app.js', 'styles.css', 'favicon.svg', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'data/meta.json', 'data/weekly.rolling.json', 'data/state/weekly.rolling.json', 'data/all.time.json', 'data/state/all.time.json']) {
       assert.ok(fs.existsSync(path.join(out1, f)), f);
     }
     const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
@@ -534,7 +558,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const cfgB = { ...cfgA, dataDir: path.join(TMP, 'buildB') };
     const out2 = path.join(TMP, 'site2');
     const r2 = await build({ cfg: cfgB, out: out2, seedUrl: 'https://example.test/site/', search, fetchImpl: served(out1), ...quiet });
-    assert.deepEqual([r2.loaded, r2.ran, r2.written], [11, 6, 11]); // 최근·진행 중 6개만 다시 확인
+    assert.deepEqual([r2.loaded, r2.ran, r2.written], [12, 7, 12]); // 최근·진행 중 6개와 전체 기간만 다시 확인
+    const top2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/all.time.json'), 'utf8'));
+    assert.deepEqual([top2.version, top2.from, top2.to, top2.items[0].gain], [2, '1970-01-01', null, 7]);
     const chart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([chart2.version, chart2.items[0].gain, chart2.items[0].move, chart2.items[0].cmove], [2, 7, 0, 0]);
     const meta2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/meta.json'), 'utf8'));
@@ -554,8 +580,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     const said = [];
     const r5 = await build({ cfg: { ...cfgA, dataDir: path.join(TMP, 'buildE') }, out: path.join(TMP, 'site5'), seedUrl: 'https://example.test/site/', search, fetchImpl: flaky, ...fast, log: (s) => said.push(s) });
-    assert.deepEqual([r5.loaded, r5.ran, r5.written], [11, 6, 11]);
-    assert.deepEqual([asked.size, ...new Set(asked.values())], [12, 2]); // meta.json + 상태 11개를 두 번씩
+    assert.deepEqual([r5.loaded, r5.ran, r5.written], [12, 7, 12]);
+    assert.deepEqual([asked.size, ...new Set(asked.values())], [13, 2]); // meta.json + 상태 12개를 두 번씩
     assert.ok(said.some((s) => /data\/meta\.json.*fetch failed: ECONNRESET, 1\/3/.test(s)), said.join('\n'));
     assert.ok(said.some((s) => /data\/state\/weekly\.rolling\.json.*HTTP 503, 1\/3/.test(s)));
 
@@ -631,6 +657,10 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual([wk.items[0].name, wk.items[8].name, wk.items[8].rank, wk.items[8].crank, wk.items[8].spam], ['org/model-0', 'org/model-400', 9, 9, false]);
     assert.deepEqual([wk.cut, wk.total, JSON.parse(wk.body).cut], [0, null, undefined]);
     assert.equal(a.store.get('yearly', 'rolling').items[99].name, 'org/model-99');
+    // 전체 기간(최대 좋아요): 만든 때를 가리지 않으므로 목록의 맨 앞 100개 그대로다(석 달 넘게 된 것도 든다).
+    const top = a.store.get('all', 'time');
+    assert.deepEqual([top.items.length, top.items[0].name, top.items[99].name, top.cut, top.from, top.to], [100, 'org/model-0', 'org/model-99', 0, '1970-01-01', null]);
+    assert.ok(top.items.some((x) => Date.parse(x.created) < today - 90 * DAYMS));
     assert.ok(a.store.dir.endsWith(path.join('hfA', 'hf', 'cache'))); // GitHub 캐시와 섞이지 않는다
 
     // 다시 훑으면 지난 스냅샷과 비교한 증가가 나온다.
@@ -656,7 +686,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const fresh = Array.from({ length: 2500 }, (_, i) => model(i, new Date(today).toISOString()));
     const c3 = hfSetup('hfC', lister(fresh), { listed: { weekly: 0, monthly: 0 }, firstYear: new Date(today).getUTCFullYear() });
     const r4 = await c3.collector.run();
-    assert.deepEqual([r4.pages, r4.buckets, calls], [1, 5, 1]); // 최근 7일·이번 주·최근 30일·이번 달·올해(최근 365일은 시작 연도 이전에 걸쳐 빠진다)
+    assert.deepEqual([r4.pages, r4.buckets, calls], [1, 6, 1]); // 최근 7일·이번 주·최근 30일·이번 달·올해·전체 기간(최근 365일은 시작 연도 이전에 걸쳐 빠진다)
 
     // 실패하면 아무것도 바꾸지 않고, 한도 초과면 풀릴 때까지 쉰다. 빌드에서는 기다리다 시간을 넘기지 않는다.
     const warn = console.warn;
@@ -685,6 +715,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const meta = await (await fetch(`${base}/data/meta.json`)).json();
     assert.equal(meta.hf.types.weekly[0].hasData, true);
     assert.equal(meta.hf.types.yearly.length, 2 + new Date(today).getUTCFullYear() - baseCfg.hf.firstYear);
+    assert.deepEqual(meta.hf.types.all.map((b) => [b.key, b.label, b.hasData]), [['time', '전체 기간', true]]);
+    assert.equal((await (await fetch(`${base}/data/hf/all.time.json`)).json()).items[0].name, 'org/model-0');
     let res = await fetch(`${base}/data/hf/weekly.rolling.json?v=2`);
     assert.equal(res.status, 200);
     assert.equal((await res.json()).items[0].name, 'org/model-0');
@@ -716,8 +748,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     const out1 = path.join(TMP, 'siteH1');
     const r1 = await build({ cfg: cfgH, out: out1, search, api: { hf: hfList }, ...quiet });
-    assert.deepEqual([r1.written, r1.hf.written, r1.hf.loaded, r1.hf.ran, r1.hf.failed], [5, 5, 0, 1, 0]);
-    for (const f of ['data/weekly.rolling.json', 'data/hf/weekly.rolling.json', 'data/hf/state/weekly.rolling.json', `data/hf/yearly.${year}.json`]) {
+    assert.deepEqual([r1.written, r1.hf.written, r1.hf.loaded, r1.hf.ran, r1.hf.failed], [6, 6, 0, 1, 0]); // 기간 5개 + 전체 기간
+    for (const f of ['data/weekly.rolling.json', 'data/hf/weekly.rolling.json', 'data/hf/state/weekly.rolling.json', `data/hf/yearly.${year}.json`, 'data/hf/all.time.json', 'data/hf/state/all.time.json']) {
       assert.ok(fs.existsSync(path.join(out1, f)), f);
     }
     const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
@@ -747,7 +779,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     bump = 5;
     const out2 = path.join(TMP, 'siteH2');
     const r2 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH2') }, out: out2, seedUrl: 'https://example.test/site/', search, api: { hf: hfList }, fetchImpl: served(out1), ...quiet });
-    assert.deepEqual([r2.loaded, r2.hf.loaded, r2.hf.written], [5, 5, 5]);
+    assert.deepEqual([r2.loaded, r2.hf.loaded, r2.hf.written], [6, 6, 6]);
     const hfChart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/hf/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([hfChart2.version, hfChart2.items[0].gain, hfChart2.items[0].move], [2, 5, 0]);
 
@@ -757,7 +789,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const down = async () => { throw new HfError('Hugging Face에 연결하지 못했습니다 (ENOTFOUND)'); };
     const out3 = path.join(TMP, 'siteH3');
     const r3 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH3') }, out: out3, seedUrl: 'https://example.test/site/', search, api: { hf: down }, fetchImpl: served(out2), ...quiet });
-    assert.deepEqual([r3.written, r3.hf.written, r3.hf.loaded, r3.hf.ran, r3.hf.failed], [5, 5, 5, 0, 1]);
+    assert.deepEqual([r3.written, r3.hf.written, r3.hf.loaded, r3.hf.ran, r3.hf.failed], [6, 6, 6, 0, 1]);
     const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
     assert.match(meta3.hf.types.weekly[0].error, /연결하지 못했습니다/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(out3, 'data/hf/weekly.rolling.json'), 'utf8')).version, 2);
@@ -765,7 +797,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 이어받은 것도 없이 실패하면 Hugging Face 탭 없이 낸다.
     const out4 = path.join(TMP, 'siteH4');
     const r4 = await build({ cfg: { ...cfgH, dataDir: path.join(TMP, 'buildH4') }, out: out4, search, api: { hf: down }, ...quiet });
-    assert.deepEqual([r4.written, r4.hf.written], [5, 0]);
+    assert.deepEqual([r4.written, r4.hf.written], [6, 0]);
     assert.equal(JSON.parse(fs.readFileSync(path.join(out4, 'data/meta.json'), 'utf8')).hf, undefined);
     console.warn = warn;
     ok('build + hugging face: data/hf/ 파일, 배포본에서 이어받기, 실패해도 GitHub 순위는 낸다');
@@ -928,7 +960,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     world.bump = 0;
     const out1 = path.join(TMP, 'siteS1');
     const b1 = await build({ cfg: cfgS, out: out1, search, api: { as: { fetchChart, lookup } }, ...quiet });
-    assert.deepEqual([b1.written, b1.hf, b1.as.written, b1.as.loaded, b1.as.ran, b1.as.failed], [5, null, 6, 0, 8, 0]);
+    assert.deepEqual([b1.written, b1.hf, b1.as.written, b1.as.loaded, b1.as.ran, b1.as.failed], [6, null, 6, 0, 8, 0]);
     for (const f of ['data/as/free.all.json', 'data/as/grossing.6014.json', 'data/as/state/paid.all.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
     const metaS = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
     assert.deepEqual([metaS.as.country, metaS.as.types.free.length, metaS.as.types.free[1].version, metaS.hf], ['kr', 2, 1, undefined]);
@@ -986,7 +1018,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
       // 글이 많은 기간은 개수를 정확히 세지 못한다(total: null).
       return { items: hit.slice(0, limit).map((s) => ({ ...s, stars: s.stars + world.bump })), total: hit.length < 1000 ? hit.length : null };
     };
-    // 주간 5개(최근 7일, 이번 주, 지난 3주) + 월간 4개 + 연간 5개(최근 365일, 올해부터 3년 전까지) = 14개 기간
+    // 주간 5개(최근 7일, 이번 주, 지난 3주) + 월간 4개 + 연간 5개(최근 365일, 올해부터 3년 전까지) + 전체 기간 = 15개 기간
     const hnCfg = (name) => ({
       ...baseCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, name),
       hn: { ...fullCfg.hn, listed: { weekly: 3, monthly: 2 }, firstYear: year - 3, concurrency: 3 },
@@ -1000,9 +1032,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
 
     const a = hnSetup('hnA');
     const descs = a.collector.descs();
-    assert.equal(descs.length, 14);
+    assert.equal(descs.length, 15);
     const r1 = await a.collector.run();
-    assert.deepEqual([r1.pages, r1.buckets, r1.failed, r1.skipped, world.calls.length], [14, 14, 0, 0, 14]);
+    assert.deepEqual([r1.pages, r1.buckets, r1.failed, r1.skipped, world.calls.length], [15, 15, 0, 0, 15]);
     // 기간마다 그 기간에 올라온 글의 점수 상위 100개와 같다.
     for (const d of descs) {
       const from = Date.parse(d.from);
@@ -1014,14 +1046,18 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual([wk.items.length, wk.total, wk.items[0].name, wk.items[0].rank, wk.items[0].comments, wk.items[0].spam], [48, 48, 'Story 0', 1, 0, false]);
     assert.equal(wk.items[1].hn, 'https://news.ycombinator.com/item?id=1');
     assert.equal(a.store.get('yearly', 'rolling').total, null); // 정확히 세지 못한 개수는 싣지 않는다
+    // 전체 기간(최대 점수): 올라온 때를 가리지 않고 검색한다.
+    assert.ok(world.calls.includes('1970-01-01..null'));
+    const top = a.store.get('all', 'time');
+    assert.deepEqual([top.items.length, top.items[0].name, top.items[99].name, top.total], [100, 'Story 0', 'Story 99', null]);
     assert.ok(a.store.dir.endsWith(path.join('hnA', 'hn', 'cache')));
 
-    // 바로 다시 훑으면 진행 중인 기간(최근 N일, 이번 주·달·해) 6개만 다시 받는다. 끝난 기간은 건너뛴다.
+    // 바로 다시 훑으면 진행 중인 기간(최근 N일, 이번 주·달·해) 6개와 전체 기간만 다시 받는다. 끝난 기간은 건너뛴다.
     for (const b of a.store.buckets.values()) for (const p of b.history) p.t -= 3_600_000;
     world.calls = [];
     world.bump = 4;
     const r2 = await a.collector.run();
-    assert.deepEqual([r2.pages, r2.buckets, r2.skipped, world.calls.length], [6, 6, 8, 6]);
+    assert.deepEqual([r2.pages, r2.buckets, r2.skipped, world.calls.length], [7, 7, 8, 7]);
     assert.ok(world.calls.every((c) => c.endsWith('..null') || descs.some((d) => d.kind === 'current' && c === `${d.from}..${d.to}`)));
     const wk2 = a.store.get('weekly', 'rolling');
     assert.deepEqual([wk2.version, wk2.items[0].stars, wk2.items[0].gain, wk2.items[0].move], [2, 9004, 4, 0]);
@@ -1037,7 +1073,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal(a.collector.due(old, Date.now()), true);
     world.calls = [];
     const r3 = await a.collector.run();
-    assert.deepEqual([r3.pages, world.calls.includes(`${old.from}..${old.to}`)], [7, true]);
+    assert.deepEqual([r3.pages, world.calls.includes(`${old.from}..${old.to}`)], [8, true]);
 
     // 한 기간만 실패하면 그 기간만 이전 순위를 두고 표시를 남긴다.
     const warn = console.warn;
@@ -1081,6 +1117,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const base = `http://127.0.0.1:${server.address().port}`;
     const meta = await (await fetch(`${base}/data/meta.json`)).json();
     assert.deepEqual([meta.hn.types.weekly.length, meta.hn.types.yearly.length, meta.hn.types.weekly[0].hasData, meta.hf, meta.as], [5, 5, true, undefined, undefined]);
+    assert.deepEqual(meta.hn.types.all.map((b) => [b.key, b.label, b.hasData]), [['time', '전체 기간', true]]);
+    assert.equal((await (await fetch(`${base}/data/hn/all.time.json`)).json()).items[0].name, 'Story 0');
     const res = await fetch(`${base}/data/hn/weekly.rolling.json`);
     assert.equal(res.status, 200);
     assert.equal((await res.json()).items[0].name, 'Story 0');
@@ -1098,8 +1136,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     world.calls = [];
     const out1 = path.join(TMP, 'siteN1');
     const b1 = await build({ cfg: cfgN, out: out1, search: ghSearch, api: { hn: search }, ...quiet });
-    assert.deepEqual([b1.written, b1.hf, b1.as, b1.hn.written, b1.hn.loaded, b1.hn.ran, b1.hn.failed], [5, null, null, 14, 0, 14, 0]);
-    for (const f of ['data/hn/weekly.rolling.json', `data/hn/yearly.${year - 3}.json`, 'data/hn/state/monthly.rolling.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
+    assert.deepEqual([b1.written, b1.hf, b1.as, b1.hn.written, b1.hn.loaded, b1.hn.ran, b1.hn.failed], [6, null, null, 15, 0, 15, 0]);
+    for (const f of ['data/hn/weekly.rolling.json', `data/hn/yearly.${year - 3}.json`, 'data/hn/state/monthly.rolling.json', 'data/hn/all.time.json', 'data/hn/state/all.time.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
     const metaN = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
     assert.deepEqual([metaN.hn.types.weekly.length, metaN.hn.types.yearly[4].key, metaN.hn.types.yearly[4].version, metaN.hf], [5, String(year - 3), 1, undefined]);
     for (const name of fs.readdirSync(path.join(out1, 'data/hn/state'))) {
@@ -1118,7 +1156,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     world.calls = [];
     const out2 = path.join(TMP, 'siteN2');
     const b2 = await build({ cfg: { ...cfgN, dataDir: path.join(TMP, 'buildN2') }, out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api: { hn: search }, fetchImpl: served(out1), ...quiet });
-    assert.deepEqual([b2.hn.loaded, b2.hn.written, b2.hn.ran, world.calls.length], [14, 14, 6, 6]);
+    assert.deepEqual([b2.hn.loaded, b2.hn.written, b2.hn.ran, world.calls.length], [15, 15, 7, 7]);
     const chartN = JSON.parse(fs.readFileSync(path.join(out2, 'data/hn/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([chartN.version, chartN.total, chartN.items[0].gain, chartN.items[0].move, chartN.items[0].comments], [2, 48, 2, 0, 0]);
     ok('hacker news: 기간별 점수순, 끝난 기간은 가끔만 재확인, 증가, 일부·전체 실패, 한도 초과, 서버 주소, 빌드');
@@ -1144,7 +1182,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual(Object.keys(KINDS), ['models', 'spaces', 'datasets']);
 
     // 출처 목록: 설정의 kinds에 든 종류만 켜진다. 이름은 hf(모델), hfs(Space), hfd(데이터셋).
-    // 기간은 5개(최근 7일, 이번 주, 최근 30일, 이번 달, 올해)만 둔다.
+    // 기간은 6개(최근 7일, 이번 주, 최근 30일, 이번 달, 올해, 전체 기간)만 둔다.
     const cfgK = (name, kinds) => ({
       ...baseCfg, as: null, token: '', dataDir: path.join(TMP, name),
       hf: { ...baseCfg.hf, token: '', kinds, listed: { weekly: 0, monthly: 0 }, firstYear: year, pageSize: 100, maxPages: 3 },
@@ -1154,6 +1192,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual(Object.keys(sources.create({ ...cfgK('kC', ['models']), hf: null })), []);
     assert.deepEqual(Object.keys(sources.create(fullCfg)), ['hf', 'hfs', 'hfd', 'hn', 'as']); // 실제 설정에서는 모두 켜져 있다
     assert.deepEqual([sources.validKey('hfs', 'weekly', 'rolling'), sources.validKey('hfd', 'weekly', '../x'), sources.validKey('nope', 'weekly', 'rolling')], [true, false, false]);
+    // 전체 기간도 배포본에서 이어받을 수 있는 이름이다.
+    assert.deepEqual(['gh', 'hf', 'hfs', 'hfd', 'hn'].map((src) => sources.validKey(src, 'all', 'time')), [true, true, true, true, true]);
+    assert.deepEqual([sources.validKey('hn', 'all', 'rolling'), sources.validKey('as', 'all', '../x')], [false, false]);
 
     // 가짜 목록: 종류마다 오늘 만들어진 것 150개. 동시에 몇 건이 돌고 있는지도 센다.
     const world = { calls: [], active: 0, peak: 0 };
@@ -1174,7 +1215,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const col = one.make();
     assert.deepEqual([col.kind, col.label, one.group], ['spaces', 'Hugging Face Spaces', 'hf']);
     const r = await col.run();
-    assert.deepEqual([r.pages, r.buckets, world.calls.join()], [1, 5, 'spaces']);
+    assert.deepEqual([r.pages, r.buckets, world.calls.join()], [1, 6, 'spaces']);
     assert.ok(one.store.dir.endsWith(path.join('kD', 'hfs', 'cache')));
     assert.equal(one.store.get('weekly', 'rolling').items[0].name, 'org/spaces-0');
 
@@ -1200,7 +1241,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     world.peak = 0;
     const out1 = path.join(TMP, 'siteK1');
     const b1 = await build({ cfg: cfgB, out: out1, search: ghSearch, api, ...quiet });
-    assert.deepEqual([b1.written, b1.hf.written, b1.hfs.written, b1.hfd.written, b1.hn, b1.as], [5, 5, 5, 5, null, null]);
+    assert.deepEqual([b1.written, b1.hf.written, b1.hfs.written, b1.hfd.written, b1.hn, b1.as], [6, 6, 6, 6, null, null]);
     assert.deepEqual([world.calls.join(), world.peak], ['models,spaces,datasets', 1]);
     for (const f of ['data/hf/weekly.rolling.json', 'data/hfs/weekly.rolling.json', 'data/hfd/state/monthly.rolling.json']) assert.ok(fs.existsSync(path.join(out1, f)), f);
     const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
@@ -1220,15 +1261,15 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     const out2 = path.join(TMP, 'siteK2');
     const b2 = await build({ cfg: { ...cfgB, dataDir: path.join(TMP, 'buildK2') }, out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api: { ...api, hfs: down }, fetchImpl: served(out1), ...quiet });
-    assert.deepEqual([b2.hf.loaded, b2.hfs.loaded, b2.hfd.loaded], [5, 5, 5]);
-    assert.deepEqual([b2.hf.written, b2.hfs.written, b2.hfs.failed, b2.hfd.written, b2.hfd.failed], [5, 5, 1, 5, 0]); // Space는 지난 것을 다시 싣는다
+    assert.deepEqual([b2.hf.loaded, b2.hfs.loaded, b2.hfd.loaded], [6, 6, 6]);
+    assert.deepEqual([b2.hf.written, b2.hfs.written, b2.hfs.failed, b2.hfd.written, b2.hfd.failed], [6, 6, 1, 6, 0]); // Space는 지난 것을 다시 싣는다
     const meta2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/meta.json'), 'utf8'));
     assert.deepEqual([meta2.hfs.types.weekly[0].error, meta2.hfd.types.weekly[0].error], ['boom', null]);
     // 처음부터 실패한 종류는 목록에 싣지 않는다(화면에 그 단추가 나타나지 않는다).
     const out3 = path.join(TMP, 'siteK3');
     const b3 = await build({ cfg: { ...cfgB, dataDir: path.join(TMP, 'buildK3') }, out: out3, search: ghSearch, api: { ...api, hfd: down }, ...quiet });
     const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
-    assert.deepEqual([b3.hfs.written, b3.hfd.written, Boolean(meta3.hfs), meta3.hfd], [5, 0, true, undefined]);
+    assert.deepEqual([b3.hfs.written, b3.hfd.written, Boolean(meta3.hfs), meta3.hfd], [6, 0, true, undefined]);
     console.warn = warn;
     ok('hugging face space·데이터셋: 항목 모양, 켜고 끄기, 종류별 저장, 서버 주소, 차례로 받기, 이어받기, 일부 실패');
   }
@@ -1242,7 +1283,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual([minGap, maxGap], [HOUR, 12 * HOUR]);
 
     // 설정에 적힌 주기는 모두 범위 안이다.
-    const live = periods.TYPES.flatMap((t) => [fullCfg.refresh[t].rolling, fullCfg.refresh[t].current]);
+    // 진행 중인 기간의 주기: 종류마다 최근 N일(rolling)과 이번 주·달·해(current). 전체 기간에는 rolling만 있다.
+    const live = periods.TYPES.flatMap((t) => (t === 'all' ? [fullCfg.refresh[t].rolling] : [fullCfg.refresh[t].rolling, fullCfg.refresh[t].current]));
+    assert.equal(live.length, 7);
     for (const ms of [...live, fullCfg.hf.refresh, fullCfg.hn.refresh, fullCfg.as.refresh, fullCfg.static.every]) {
       assert.ok(ms >= minGap && ms <= maxGap, `주기 ${ms}ms가 범위 밖`);
     }
@@ -1273,10 +1316,10 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const small = { collect: fullCfg.collect, listed: { weekly: 0, monthly: 0 }, eager: { weekly: 0, monthly: 0 }, firstYear: year };
     const gh = setup('gapGh', async () => ({ total: 100, incomplete: false, items: page(100, 3000), rate: FAST }), small);
     gh.collector.viewers = 1;
-    // 최근 7일·이번 주, 최근 30일·이번 달, 올해 = 5개
-    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 5, failed: 0, left: 0 });
+    // 최근 7일·이번 주, 최근 30일·이번 달, 올해, 전체 기간 = 6개
+    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 6, failed: 0, left: 0 });
     assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 0, failed: 0, left: 0 });
-    assert.equal(gh.calls.length, 5);
+    assert.equal(gh.calls.length, 6);
     // '지금 갱신'을 눌러도 마찬가지다(단추 쿨다운 30초가 지났어도).
     const jr = job(gh.collector, 'weekly', 'rolling');
     jr.lastAttemptAt -= 60_000;
@@ -1292,8 +1335,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 한 시간이 지나면 다시 받는다.
     for (const b of gh.store.buckets.values()) b.fetchedAt -= minGap;
     assert.deepEqual(gh.collector.request('weekly', 'rolling', { force: true }), { ok: true, queued: true });
-    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 5, failed: 0, left: 0 });
-    assert.equal(gh.calls.length, 10);
+    assert.deepEqual(await gh.collector.drain(Date.now() + 30_000), { ran: 6, failed: 0, left: 0 });
+    assert.equal(gh.calls.length, 12);
 
     // 한 번에 훑는 수집기(Hacker News로 본다): 주기를 1분으로 적어도 한 시간으로 맞춰지고, 훑은 지 한 시간이 안 됐으면 다시 훑지 않는다.
     const hnCalls = [];
@@ -1311,9 +1354,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     hs.load();
     const hc = new HnCollector({ cfg: cfgH, store: hs, search: hnSearch });
     assert.equal(hc.refresh, minGap);
-    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 5, failed: 0, left: 0 });
+    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 6, failed: 0, left: 0 });
     assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 0, failed: 0, left: 0, skipped: true });
-    assert.equal(hnCalls.length, 5);
+    assert.equal(hnCalls.length, 6);
     hc.lastAttemptAt -= 60_000;
     cool = hc.request('weekly', 'rolling', { force: true });
     assert.equal(cool.reason, 'cooldown');
@@ -1323,8 +1366,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     hc.viewers = 1;
     assert.equal(hc.dueAt() - hc.lastWalkAt, minGap);
     hc.lastWalkAt -= minGap;
-    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 5, failed: 0, left: 0 });
-    assert.equal(hnCalls.length, 10);
+    assert.deepEqual(await hc.drain(Date.now() + 5000), { ran: 6, failed: 0, left: 0 });
+    assert.equal(hnCalls.length, 12);
 
     // 빌드: 받은 지 한 시간이 안 됐으면 어느 출처도 다시 받지 않고, 이어받은 것을 그대로 써 낸다.
     const ghCalls = [];
@@ -1358,7 +1401,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
 
     const out1 = path.join(TMP, 'siteG1');
     const b1 = await build({ cfg: cfgG('gapB1'), out: out1, search: ghSearch, api, log });
-    assert.deepEqual([b1.ran, b1.hn.ran, b1.collected, ghCalls.length, hnCalls.length], [5, 5, true, 5, 5]);
+    assert.deepEqual([b1.ran, b1.hn.ran, b1.collected, ghCalls.length, hnCalls.length], [6, 6, true, 6, 6]);
     const meta1 = readJson(out1, 'data/meta.json');
     assert.ok(meta1.collectedAt <= meta1.builtAt && meta1.builtAt - meta1.collectedAt < 5000);
     assert.equal(b1.collectedAt, meta1.collectedAt);
@@ -1367,9 +1410,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     age(out1, 10 * 60_000);
     const out2 = path.join(TMP, 'siteG2');
     const b2 = await build({ cfg: cfgG('gapB2'), out: out2, search: ghSearch, api, log, ...seeded(out1) });
-    assert.deepEqual([b2.loaded, b2.ran, b2.left, b2.written, b2.collected], [5, 0, 0, 5, false]);
-    assert.deepEqual([b2.hn.loaded, b2.hn.ran, b2.hn.skipped, b2.hn.written], [5, 0, true, 5]);
-    assert.deepEqual([ghCalls.length, hnCalls.length], [5, 5]);
+    assert.deepEqual([b2.loaded, b2.ran, b2.left, b2.written, b2.collected], [6, 0, 0, 6, false]);
+    assert.deepEqual([b2.hn.loaded, b2.hn.ran, b2.hn.skipped, b2.hn.written], [6, 0, true, 6]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [6, 6]);
     const meta2 = readJson(out2, 'data/meta.json');
     const sinceCollect = meta2.builtAt - meta2.collectedAt; // 마지막 수집은 10분 전 그대로
     assert.ok(sinceCollect >= 10 * 60_000 && sinceCollect < 10 * 60_000 + 10_000, `${sinceCollect}`);
@@ -1381,8 +1424,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     // 한 시간이 지난 뒤의 빌드는 다시 받는다.
     age(out1, 50 * 60_000 + 1000);
     const b3 = await build({ cfg: cfgG('gapB3'), out: path.join(TMP, 'siteG3'), search: ghSearch, api, log, ...seeded(out1) });
-    assert.deepEqual([b3.loaded, b3.ran, b3.hn.ran, b3.hn.skipped, b3.collected], [5, 5, 5, undefined, true]);
-    assert.deepEqual([ghCalls.length, hnCalls.length], [10, 10]);
+    assert.deepEqual([b3.loaded, b3.ran, b3.hn.ran, b3.hn.skipped, b3.collected], [6, 6, 6, undefined, true]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [12, 12]);
 
     // 출처마다 따로 따진다: 새로 켠 출처는 다른 출처를 방금 받았더라도 바로 받는다.
     const outA = path.join(TMP, 'siteG4');
@@ -1391,8 +1434,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     ghCalls.length = 0;
     hnCalls.length = 0;
     const b5 = await build({ cfg: cfgG('gapB5'), out: path.join(TMP, 'siteG5'), search: ghSearch, api, log, ...seeded(outA) });
-    assert.deepEqual([b5.ran, b5.hn.loaded, b5.hn.ran, b5.hn.written, b5.collected], [0, 0, 5, 5, true]);
-    assert.deepEqual([ghCalls.length, hnCalls.length], [0, 5]);
+    assert.deepEqual([b5.ran, b5.hn.loaded, b5.hn.ran, b5.hn.written, b5.collected], [0, 0, 6, 6, true]);
+    assert.deepEqual([ghCalls.length, hnCalls.length], [0, 6]);
     ok('수집 주기: 하루 두 번 이상·한 시간에 한 번 이하, 설정과 cron, 범위 밖 설정 맞추기, 잇단 빌드·수동 갱신은 다시 받지 않음, 새 출처는 바로');
   }
 
