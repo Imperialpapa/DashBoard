@@ -14,8 +14,9 @@ const { Collector } = require(path.join(root, 'lib/collector'));
 const { GitHubError } = require(path.join(root, 'lib/github'));
 const fullCfg = require(path.join(root, 'config'));
 // 덧붙는 출처는 시험마다 필요한 것만 켠다(켜 두면 build()가 실제 API를 부른다). Hacker News는 15번에서 따로 켠다.
+// 분야별 순위(categories)도 꺼 두고 18번에서 따로 본다.
 // collect.minGap: 0 → 시험은 잇달아 받아 보므로 "한 시간에 한 번까지"를 꺼 둔다(그 한계는 17번에서 실제 값으로 본다).
-const baseCfg = { ...fullCfg, hn: null, hf: { ...fullCfg.hf, kinds: ['models'] }, collect: { ...fullCfg.collect, minGap: 0 } }; // Hugging Face는 모델만(Space·데이터셋은 16번에서)
+const baseCfg = { ...fullCfg, hn: null, categories: null, hf: { ...fullCfg.hf, kinds: ['models'] }, collect: { ...fullCfg.collect, minGap: 0 } }; // Hugging Face는 모델만(Space·데이터셋은 16번에서)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
@@ -1027,7 +1028,9 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
       const cfg = hnCfg(name);
       const store = new Store(storeConfig(cfg));
       store.load();
-      return { cfg, store, collector: new HnCollector({ cfg, store, search }) };
+      const collector = new HnCollector({ cfg, store, search });
+      collector.retryWait = 0; // 일부 실패를 한 번 더 받아 보기 전의 대기(시험에서는 기다리지 않는다)
+      return { cfg, store, collector };
     };
 
     const a = hnSetup('hnA');
@@ -1190,7 +1193,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual(Object.keys(sources.create(cfgK('kA', ['models', 'spaces', 'datasets']))), ['hf', 'hfs', 'hfd']);
     assert.deepEqual(Object.keys(sources.create(cfgK('kB', ['datasets']))), ['hfd']);
     assert.deepEqual(Object.keys(sources.create({ ...cfgK('kC', ['models']), hf: null })), []);
-    assert.deepEqual(Object.keys(sources.create(fullCfg)), ['hf', 'hfs', 'hfd', 'hn', 'as']); // 실제 설정에서는 모두 켜져 있다
+    assert.deepEqual(Object.keys(sources.create({ ...fullCfg, categories: null })), ['hf', 'hfs', 'hfd', 'hn', 'as']); // 실제 설정에서는 모두 켜져 있다(분야별 순위는 18번에서)
     assert.deepEqual([sources.validKey('hfs', 'weekly', 'rolling'), sources.validKey('hfd', 'weekly', '../x'), sources.validKey('nope', 'weekly', 'rolling')], [true, false, false]);
     // 전체 기간도 배포본에서 이어받을 수 있는 이름이다.
     assert.deepEqual(['gh', 'hf', 'hfs', 'hfd', 'hn'].map((src) => sources.validKey(src, 'all', 'time')), [true, true, true, true, true]);
@@ -1345,7 +1348,7 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
       return { items: [{ id: 's1', name: 'Story', owner: 'u', avatar: '', url: 'https://a.example/1', hn: 'https://news.ycombinator.com/item?id=1', desc: '', lang: 'a.example', stars: 10, comments: 1, created: new Date().toISOString() }], total: 1 };
     };
     const cfgG = (name, over = {}) => ({
-      ...fullCfg, hf: null, as: null, token: '', dataDir: path.join(TMP, name), listed: { weekly: 0, monthly: 0 }, firstYear: year,
+      ...fullCfg, hf: null, as: null, categories: null, token: '', dataDir: path.join(TMP, name), listed: { weekly: 0, monthly: 0 }, firstYear: year,
       hn: { ...fullCfg.hn, listed: { weekly: 0, monthly: 0 }, firstYear: year, refresh: 60_000 },
       static: { every: 12 * HOUR, budget: 5000 }, ...over,
     });
@@ -1437,6 +1440,372 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.deepEqual([b5.ran, b5.hn.loaded, b5.hn.ran, b5.hn.written, b5.collected], [0, 0, 6, 6, true]);
     assert.deepEqual([ghCalls.length, hnCalls.length], [0, 6]);
     ok('수집 주기: 하루 두 번 이상·한 시간에 한 번 이하, 설정과 cron, 범위 밖 설정 맞추기, 잇단 빌드·수동 갱신은 다시 받지 않음, 새 출처는 바로');
+  }
+
+  // 18) 분야별 순위: 분야 × 출처마다 수집기가 하나씩 더 생겨, 그 분야의 낱말로 따로 받는다
+  {
+    const categories = require(path.join(root, 'lib/categories'));
+    const sources = require(path.join(root, 'lib/sources'));
+    const { Gate } = require(path.join(root, 'lib/collector'));
+    const { HfCollector } = require(path.join(root, 'lib/hfcollector'));
+    const { queryPart, HnError } = require(path.join(root, 'lib/hn'));
+    const { HfError } = require(path.join(root, 'lib/hf'));
+    const { build } = require(path.join(root, 'lib/build'));
+    const { createApp } = require(path.join(root, 'server'));
+    const DAYMS = 86_400_000;
+    const today = periods.startOfDay(Date.now()).getTime();
+    const year = new Date(today).getUTCFullYear();
+    const ago = (days) => new Date(today - days * DAYMS + 3_600_000).toISOString();
+
+    // ── 설정 다루기 ──
+    // 로보틱스는 세 출처 모두에, 에이전트는 GitHub에만 있다.
+    const list = [
+      { id: 'robotics', label: '로보틱스', github: ['robot', 'ros2', 'legged robot'], hf: { tags: ['robotics'], search: ['robot'] }, hn: ['robot', 'image generation'] },
+      { id: 'agents', label: '에이전트', github: ['agent'] },
+    ];
+    const parsed = categories.all({ categories: { list } });
+    assert.deepEqual(parsed.map((c) => c.id), ['robotics', 'agents']);
+    assert.deepEqual(parsed[1], { id: 'agents', label: '에이전트', github: ['agent'], hf: { tags: [], search: [] }, hn: [] });
+    assert.equal(categories.githubQuery(parsed[0].github), 'robot OR ros2 OR "legged robot" in:name,description,topics');
+    assert.deepEqual([categories.all({ categories: null }), categories.all({})], [[], []]);
+    assert.deepEqual([categories.name('gh', 'robotics'), categories.split('hfs_my-cat'), categories.split('hf')], ['gh_robotics', { base: 'hfs', cat: 'my-cat' }, { base: 'hf', cat: '' }]);
+    // 잘못 적힌 분야는 조용히 넘기지 않는다.
+    const bad = (c, re) => assert.throws(() => categories.all({ categories: { list: [].concat(c) } }), re);
+    bad({ id: 'Robotics', label: 'x', github: ['a'] }, /id는 영문 소문자/);
+    bad({ id: 'a_b', label: 'x', github: ['a'] }, /id는 영문 소문자/); // _는 출처와 분야를 가르는 글자다
+    bad({ id: 'x', github: ['a'] }, /label/);
+    bad({ id: 'x', label: 'x' }, /낱말이 하나도 없습니다/);
+    bad({ id: 'x', label: 'x', github: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, /6개까지/); // GitHub 검색은 OR를 다섯 번까지만 받는다
+    bad({ id: 'x', label: 'x', github: ['a"b'] }, /따옴표/);
+    bad({ id: 'x', label: 'x', hn: ['a"b'] }, /따옴표/);
+    bad([{ id: 'x', label: 'x', github: ['a'] }, { id: 'x', label: 'y', github: ['b'] }], /두 번/);
+    // 따로 적지 않은 값은 기본값을 쓰고, 분야별 수집기에는 평소와 같은 자리에 분야용 값이 들어간다.
+    assert.deepEqual(categories.settings({ categories: { listed: { weekly: 1 } } }).listed, { weekly: 1, monthly: 6 });
+    const conf = categories.config(fullCfg);
+    const set = categories.settings(fullCfg);
+    assert.deepEqual([conf.listed, conf.eager, conf.hf.listed, conf.hn.listed, conf.hf.maxPages], [set.listed, set.listed, set.listed, set.listed, set.hfPages]);
+    assert.deepEqual([conf.refresh.recentClosed, conf.refresh.closed, conf.refresh.archive, conf.refresh.weekly], [set.refresh.recentClosed, set.refresh.closed, set.refresh.archive, fullCfg.refresh.weekly]);
+    assert.ok(conf.refresh.recentClosed >= fullCfg.refresh.recentClosed && conf.refresh.archive >= fullCfg.refresh.archive); // 끝난 기간은 전체 순위보다 덜 자주
+    // 실제 설정: 적힌 분야가 모두 유효하고, 분야 × 출처마다 출처가 하나씩 뒤에 덧붙는다.
+    const real = categories.all(fullCfg);
+    assert.ok(real.some((c) => c.id === 'agents') && real.some((c) => c.id === 'robotics'));
+    const expectNames = real.flatMap((c) => [
+      ...(c.github.length ? ['gh'] : []),
+      ...(c.hf.tags.length || c.hf.search.length ? ['hf', 'hfs', 'hfd'] : []),
+      ...(c.hn.length ? ['hn'] : []),
+    ].map((base) => `${base}_${c.id}`));
+    assert.deepEqual(Object.keys(sources.create(fullCfg)), ['hf', 'hfs', 'hfd', 'hn', 'as', ...expectNames]);
+    // 배포본에서 이어받을 수 있는 이름인지: 분야별 순위는 그 출처의 규칙을 따르고, App Store에는 분야가 없다.
+    assert.deepEqual(
+      [['gh_robotics', 'weekly', 'rolling'], ['hfd_my-cat', 'all', 'time'], ['hn_robotics', 'weekly', '../x'], ['as_robotics', 'free', 'all'], ['gh_Bad', 'weekly', 'rolling'], ['nope_x', 'weekly', 'rolling']].map((a) => sources.validKey(...a)),
+      [true, true, false, false, false, false],
+    );
+    // Hacker News 검색어: 제목만 보고 오타 보정을 꺼야 점수순으로 온다. 띄어 쓴 낱말은 구절로 찾는다.
+    assert.equal(queryPart(''), '');
+    assert.equal(queryPart('agent'), '&query=agent&restrictSearchableAttributes=title&typoTolerance=false');
+    assert.equal(queryPart('image generation'), '&query=%22image%20generation%22&advancedSyntax=true&restrictSearchableAttributes=title&typoTolerance=false');
+
+    // ── 가짜 API 셋 ──
+    // GitHub: 질의 앞머리로 어느 수집기가 불렀는지 가린다(전체 5000점대, 로보틱스 3000점대, 에이전트 2000점대).
+    const gh = { calls: [], active: 0, peak: 0, bump: 0 };
+    const who = (q) => (q.startsWith('robot OR ros2 OR "legged robot" in:name,description,topics created:') ? 'robotics' : q.startsWith('agent in:name,description,topics created:') ? 'agents' : q.startsWith('created:') ? 'all' : `?${q}`);
+    const ghSearch = async ({ q }) => {
+      gh.calls.push(who(q));
+      gh.active += 1;
+      gh.peak = Math.max(gh.peak, gh.active);
+      await sleep(1);
+      gh.active -= 1;
+      const top = { all: 5000, robotics: 3000, agents: 2000 }[who(q)];
+      return { total: 1000, incomplete: false, items: page(100, top).map((x) => ({ ...x, stars: x.stars + gh.bump })), rate: FAST };
+    };
+    // Hugging Face: 태그(filter)나 이름(search)으로 거른 목록을 좋아요순으로 100개씩 준다. 다음 쪽 주소에는 조건이 들어 있다.
+    const hf = { calls: [], active: 0, peak: 0, items: [], flaky: new Map() }; // flaky: 요청 → 앞으로 실패할 횟수
+    const hfItem = (id, stars, days, tags, name = `org/m-${id}`) => ({ id, name, owner: 'org', avatar: '', url: `https://huggingface.co/${name}`, desc: '', lang: 'x', stars, created: ago(days), tags });
+    const hfList = async ({ kind, cursor, limit, filter = '', search = '' }) => {
+      const cond = cursor ? cursor.split('|')[0] : filter ? `tag=${filter}` : search ? `name=${search}` : 'all';
+      const start = cursor ? Number(cursor.split('|')[1]) : 0;
+      const call = `${kind}:${cond}@${start}`;
+      hf.calls.push(call);
+      if (hf.flaky.get(call)) {
+        hf.flaky.set(call, hf.flaky.get(call) - 1);
+        throw new HfError('The request is taking longer than expected, please try again later.', { status: 504 });
+      }
+      hf.active += 1;
+      hf.peak = Math.max(hf.peak, hf.active);
+      await sleep(1);
+      hf.active -= 1;
+      const hit = hf.items.filter((m) => cond === 'all' || (cond.startsWith('tag=') ? m.tags.includes(cond.slice(4)) : m.name.includes(cond.slice(5))));
+      return { items: hit.slice(start, start + limit).map(({ tags, ...m }) => m), next: start + limit < hit.length ? `${cond}|${start + limit}` : null, rate: null };
+    };
+    // 로보틱스 태그가 붙은 것 350개(좋아요 350…1). 앞의 5개만 오늘 만들어졌고 나머지는 20일 전. 그중 앞의 3개는 이름에도 robot이 들었다.
+    for (let i = 0; i < 350; i++) hf.items.push(hfItem(`t${i}`, 350 - i, i < 5 ? 0 : 20, ['robotics'], i < 3 ? `org/robot-tagged-${i}` : `org/arm-${i}`));
+    // 이름에만 robot이 든 것 30개(좋아요 500…471, 20일 전)와, 오늘 만들어졌지만 좋아요가 적은 것 하나.
+    for (let j = 0; j < 30; j++) hf.items.push(hfItem(`n${j}`, 500 - j, 20, [], `org/robot-${j}`));
+    hf.items.push(hfItem('low', 5, 0, [], 'org/robot-low'));
+    hf.items.push(hfItem('other', 9999, 0, ['text-generation'], 'org/unrelated')); // 어느 조건에도 걸리지 않는다
+    hf.items.sort((a, b) => b.stars - a.stars);
+    // Hacker News: 제목에 그 낱말로 시작하는 낱말(또는 그 구절)이 든 글을 점수순으로 준다.
+    const hn = { calls: [], stories: [], flaky: new Map(), status: 403 }; // flaky: "낱말@시작..끝" → 앞으로 실패할 횟수
+    const story = (id, name, stars) => ({ id, name, owner: 'u', avatar: '', url: `https://a.example/${id}`, hn: `https://news.ycombinator.com/item?id=${id}`, desc: '', lang: 'a.example', stars, comments: 1, created: ago(0) });
+    for (let i = 0; i < 150; i++) hn.stories.push(story(`r${i}`, `Robots at work ${i}`, 1000 - i));
+    for (let i = 0; i < 20; i++) hn.stories.push(story(`g${i}`, `New image generation model ${i}`, 2000 - i));
+    hn.stories.push(story('both', 'A robot that does image generation', 5000)); // 두 낱말에 모두 걸린다
+    hn.stories.push(story('other', 'Unrelated but popular', 9999));
+    hn.stories.sort((a, b) => b.stars - a.stars);
+    const hnSearch = async ({ from, to, limit, query = '' }) => {
+      hn.calls.push(query);
+      const call = `${query}@${from}..${to}`;
+      if (hn.flaky.get(call)) {
+        hn.flaky.set(call, hn.flaky.get(call) - 1);
+        throw new HnError(`HTTP ${hn.status}`, { status: hn.status });
+      }
+      const a = Date.parse(from);
+      const b = to ? Date.parse(to) + DAYMS : Infinity;
+      const q = query.toLowerCase();
+      const match = (s) => !q || (q.includes(' ') ? s.name.toLowerCase().includes(q) : s.name.toLowerCase().split(/\W+/).some((w) => w.startsWith(q)));
+      const hit = hn.stories.filter((s) => Date.parse(s.created) >= a && Date.parse(s.created) < b && match(s));
+      return { items: hit.slice(0, limit), total: hit.length };
+    };
+    const api = { gh: ghSearch, hf: hfList, hfd: hfList, hn: hnSearch };
+
+    // 기간은 출처마다 6개(최근 7일, 이번 주, 최근 30일, 이번 달, 올해, 전체 기간)만 둔다.
+    const none = { weekly: 0, monthly: 0 };
+    const cfgC = (name, over = {}) => ({
+      ...baseCfg, as: null, token: '', dataDir: path.join(TMP, name), listed: none, eager: none, firstYear: year,
+      hf: { ...baseCfg.hf, token: '', kinds: ['models', 'datasets'], listed: none, firstYear: year, pageSize: 100, maxPages: 3 },
+      hn: { ...fullCfg.hn, listed: none, firstYear: year, concurrency: 2 },
+      categories: { listed: none, hfPages: 2, list },
+      static: { every: 15 * 60_000, budget: 30_000 },
+      ...over,
+    });
+
+    // ── 출처 목록 ──
+    const cfg = cfgC('catA');
+    const gate = new Gate('');
+    const made = sources.create(cfg, api, { gate });
+    assert.deepEqual(Object.keys(made), ['hf', 'hfd', 'hn', 'gh_robotics', 'hf_robotics', 'hfd_robotics', 'hn_robotics', 'gh_agents']);
+    assert.deepEqual(['gh_robotics', 'hf_robotics', 'hfd_robotics', 'hn_robotics', 'gh_agents'].map((n) => made[n].group), ['gh', 'hf', 'hf', 'hn', 'gh']);
+    for (const n of Object.keys(made)) assert.ok(made[n].store.dir.endsWith(path.join('catA', n, 'cache')), n); // 저장소는 이름마다 따로
+    for (const s of Object.values(made)) s.store.load();
+
+    // ── GitHub: 질의 앞에 분야의 낱말이 붙고, 검색 한도는 전체 순위와 함께 쓴다 ──
+    const mainStore = new Store(cfg);
+    mainStore.load();
+    const main = new Collector({ cfg, store: mainStore, search: ghSearch, gate });
+    const robo = made.gh_robotics.make();
+    const agents = made.gh_agents.make();
+    assert.deepEqual([robo.gate === gate, agents.gate === gate, gate.members.length, robo.label], [true, true, 3, 'GitHub(로보틱스)']);
+    gate.rate = { ...FAST };
+    for (const c of gate.members) c.viewers = 1;
+    const stats = await Collector.drainAll([main, robo, agents], Date.now() + 30_000);
+    assert.deepEqual(stats, [{ ran: 6, failed: 0, left: 0 }, { ran: 6, failed: 0, left: 0 }, { ran: 6, failed: 0, left: 0 }]);
+    // 수집기를 가리지 않고 급한 것부터: 어느 한 분야가 통째로 뒤로 밀리지 않고 번갈아 받는다. 요청은 한 번에 하나씩 나간다.
+    assert.deepEqual(gh.calls.slice(0, 6), ['all', 'robotics', 'agents', 'all', 'robotics', 'agents']);
+    assert.deepEqual([gh.calls.length, gh.peak, gh.calls.filter((c) => c.startsWith('?')).length], [18, 1, 0]);
+    const roboWeek = made.gh_robotics.store.get('weekly', 'rolling');
+    assert.deepEqual([roboWeek.items.length, roboWeek.items[0].stars, mainStore.get('weekly', 'rolling').items[0].stars, made.gh_agents.store.get('all', 'time').items[0].stars], [100, 3000, 5000, 2000]);
+    assert.match(roboWeek.query, /^robot OR ros2 OR "legged robot" in:name,description,topics created:>=\d{4}-\d\d-\d\d$/);
+    assert.deepEqual([roboWeek.items[0].spam, roboWeek.items[0].crank], [false, 1]); // GitHub 저장소이므로 스팸 의심 규칙도 그대로 적용된다
+    // 어느 분야인지와 그 낱말은 목록(meta)에 실린다. 전체 순위의 목록에는 없다.
+    assert.deepEqual(robo.meta().category, { id: 'robotics', label: '로보틱스', terms: ['robot', 'ros2', 'legged robot'] });
+    assert.deepEqual([main.meta().category, robo.meta().spam.minStars, robo.meta().types.weekly.length], [undefined, baseCfg.spam.minStars, 2]);
+    // 한도에 얽힌 값은 하나다: 한 수집기가 쉬면 모두 쉬고, 토큰이 버려지면 모두에게서 버려진다.
+    robo.pauseUntil = 12345;
+    agents.token = 'abc';
+    assert.deepEqual([main.pauseUntil, agents.pauseUntil, main.token, robo.token, main.rate === robo.rate], [12345, 12345, 'abc', 'abc', true]);
+    robo.pauseUntil = 0;
+    agents.token = '';
+    // 타이머로 돌 때도 수집기를 통틀어 한 번에 하나만 받는다: 셋이 한꺼번에 tick해도 요청은 하나만 나간다.
+    for (const s of [mainStore, made.gh_robotics.store, made.gh_agents.store]) for (const b of s.buckets.values()) b.fetchedAt -= 2 * 3_600_000;
+    const before = gh.calls.length;
+    await sleep(5);
+    main.tick();
+    robo.tick();
+    agents.tick();
+    await sleep(60);
+    assert.deepEqual([gh.calls.length - before, gh.peak, gate.busy], [1, 1, null]);
+
+    // ── Hugging Face: 조건마다 훑어 합치고, 덜 훑은 조건이 있으면 빠짐없이 본 좋아요 수 이상만 순위에 넣는다 ──
+    const hfRobo = made.hf_robotics.make();
+    assert.deepEqual([hfRobo.kind, hfRobo.label, hfRobo.cfg.hf.maxPages], ['models', 'Hugging Face(로보틱스)', 2]);
+    const hr = await hfRobo.run();
+    // 태그 목록은 2쪽(상한)에서 멈추고, 이름 목록은 34개뿐이라 한 쪽에 끝난다.
+    assert.deepEqual(hf.calls, ['models:tag=robotics@0', 'models:tag=robotics@100', 'models:name=robot@0']);
+    // 태그 목록에서 본 가장 낮은 좋아요가 151 → 152 이상인 것만 빠짐없이 봤다.
+    assert.deepEqual([hr.pages, hr.buckets, hr.exhausted, hr.lowest], [3, 6, false, 152]);
+    const hfStore = made.hf_robotics.store;
+    const month = hfStore.get('monthly', 'rolling');
+    // 최근 30일: 이름에 robot이 든 30개(500…471) 다음에 태그가 붙은 것(350…). 두 조건에 모두 걸린 것은 한 번만 나온다.
+    assert.deepEqual([month.items.length, month.items[0].stars, month.items[29].stars, month.items[30].name, month.items[99].stars, month.cut], [100, 500, 471, 'org/robot-tagged-0', 281, 0]);
+    assert.equal(new Set(month.items.map((x) => x.id)).size, 100);
+    assert.ok(!month.items.some((x) => x.name === 'org/unrelated'));
+    // 최근 7일: 오늘 만들어진 것 가운데 좋아요 152 이상은 5개뿐이다. 좋아요 5개짜리는 봤지만 넣지 않는다
+    // (태그 목록에는 그보다 좋아요가 많은데 아직 못 본 것이 있을 수 있어서). 덜 찬 기간에는 어디까지 훑었는지 남긴다.
+    const week = hfStore.get('weekly', 'rolling');
+    assert.deepEqual([week.items.map((x) => x.stars), week.cut, JSON.parse(week.body).cut], [[350, 349, 348, 347, 346], 152, 152]);
+    assert.deepEqual(hfRobo.meta().category, { id: 'robotics', label: '로보틱스', tags: ['robotics'], terms: ['robot'] });
+    // 잠깐의 실패(조건을 건 목록을 처음 부르면 "오래 걸린다"며 거절당하는 일이 있다)는 한 번 더 받아 본다.
+    hfRobo.retryWait = 0;
+    hf.calls = [];
+    hf.flaky.set('models:tag=robotics@100', 1);
+    const hr2 = await hfRobo.run();
+    assert.deepEqual([hr2.pages, hf.calls], [3, ['models:tag=robotics@0', 'models:tag=robotics@100', 'models:tag=robotics@100', 'models:name=robot@0']]);
+    // 두 번째도 안 되면 그때 실패로 치고 아무것도 바꾸지 않는다. 한도 초과는 다시 보내지 않고 풀릴 때까지 쉰다.
+    const warn = console.warn;
+    console.warn = () => {};
+    const hfdRobo = made.hfd_robotics.make();
+    hfdRobo.retryWait = 0;
+    hf.calls = [];
+    hf.flaky.set('datasets:name=robot@0', 2);
+    assert.deepEqual([await hfdRobo.run(), made.hfd_robotics.store.buckets.size, hfdRobo.error], [null, 0, 'The request is taking longer than expected, please try again later.']);
+    assert.deepEqual(hf.calls.slice(-2), ['datasets:name=robot@0', 'datasets:name=robot@0']);
+    const limited = async () => { limited.calls += 1; throw new HfError('HTTP 429', { status: 429, retryAfter: 60 }); };
+    limited.calls = 0;
+    const limStore = new Store({ ...categories.config(cfgC('catLimit')), dataDir: path.join(TMP, 'catLimit', 'hf_robotics'), spam: null });
+    limStore.load();
+    const lim = new HfCollector({ cfg: categories.config(cfgC('catLimit')), store: limStore, list: limited, terms: [{ filter: 'robotics' }] });
+    lim.retryWait = 0;
+    assert.deepEqual([await lim.run(), limited.calls, lim.pauseUntil - Date.now() > 50_000], [null, 1, true]);
+    console.warn = warn;
+    hf.flaky.clear();
+
+    // 좋아요가 없는 것까지 내려가면 그 조건은 다 본 것으로 치고 멈춘다. 좋아요가 없는 것은 싣지 않는다.
+    const zeroItems = Array.from({ length: 250 }, (_, i) => hfItem(`z${i}`, Math.max(0, 100 - i), 0, ['robotics'])); // 100…1, 그 뒤로 150개는 0
+    const zeroCalls = [];
+    const zeroList = async ({ cursor, limit, filter = '', search = '' }) => {
+      const cond = cursor ? cursor.split('|')[0] : filter ? 'tag' : 'name';
+      const start = cursor ? Number(cursor.split('|')[1]) : 0;
+      zeroCalls.push(`${cond}@${start}`);
+      const hit = cond === 'tag' ? zeroItems : [];
+      void search;
+      return { items: hit.slice(start, start + limit).map(({ tags, ...m }) => m), next: start + limit < hit.length ? `${cond}|${start + limit}` : null, rate: null };
+    };
+    const zeroCfg = categories.config(cfgC('catZero', { categories: { listed: none, hfPages: 10, list } }));
+    const zeroStore = new Store({ ...zeroCfg, dataDir: path.join(zeroCfg.dataDir, 'hf_robotics'), spam: null });
+    zeroStore.load();
+    const zr = await new HfCollector({ cfg: zeroCfg, store: zeroStore, list: zeroList, terms: [{ filter: 'robotics' }, { search: 'robot' }] }).run();
+    assert.deepEqual([zeroCalls, zr.pages, zr.exhausted, zr.lowest], [['tag@0', 'tag@100', 'name@0'], 3, true, 0]); // 3쪽째(0뿐인 쪽)는 받지 않는다
+    const zeroTop = zeroStore.get('all', 'time');
+    assert.deepEqual([zeroTop.items.length, zeroTop.items[99].stars, zeroTop.cut], [100, 1, 0]);
+
+    // ── Hacker News: 낱말마다 검색해 합친 뒤 점수순으로 다시 세운다 ──
+    const hnRobo = made.hn_robotics.make();
+    const nr = await hnRobo.run();
+    assert.deepEqual([nr.pages, nr.buckets, nr.failed, hn.calls.length, [...new Set(hn.calls)].sort()], [12, 6, 0, 12, ['image generation', 'robot']]); // 기간 6개 × 낱말 2개
+    const hnWeek = made.hn_robotics.store.get('weekly', 'rolling');
+    // 두 낱말에 모두 걸린 글은 한 번만, 그다음 image generation 20개(2000…1981), 그다음 robot(1000…).
+    assert.deepEqual([hnWeek.items.length, hnWeek.items[0].id, hnWeek.items[1].stars, hnWeek.items[20].stars, hnWeek.items[21].stars, hnWeek.items[99].stars, hnWeek.total], [100, 'both', 2000, 1981, 1000, 922, null]);
+    assert.equal(new Set(hnWeek.items.map((x) => x.id)).size, 100);
+    assert.deepEqual([hnRobo.label, hnRobo.meta().category], ['Hacker News(로보틱스)', { id: 'robotics', label: '로보틱스', terms: ['robot', 'image generation'] }]);
+    // 요청이 몰려 한순간 몇 건이 거절당하면(일부만 실패) 그 기간만 한 번 더 받아 본다.
+    hnRobo.retryWait = 0;
+    const hnRolling = hnRobo.find('weekly', 'rolling');
+    const flakyAt = (term) => `${term}@${hnRolling.from}..null`; // 최근 7일을 받는 요청
+    hn.calls = [];
+    hn.flaky.set(flakyAt('image generation'), 1);
+    const nr2 = await hnRobo.run();
+    assert.deepEqual([nr2.pages, nr2.failed, hn.calls.length, hnRobo.bucketErrors.size], [14, 0, 14, 0]); // 12번 + 실패한 기간의 낱말 2개 다시
+    // 다시 받아도 안 되면 그 기간만 표시를 남기고 이전 순위를 둔다. 다음에 받으면 표시가 지워진다.
+    hn.flaky.set(flakyAt('image generation'), 2);
+    const nr3 = await hnRobo.run();
+    assert.deepEqual([nr3.failed, [...hnRobo.bucketErrors.entries()], made.hn_robotics.store.buckets.size], [1, [['weekly/rolling', 'HTTP 403']], 6]);
+    assert.equal(made.hn_robotics.store.get('weekly', 'rolling').items.length, 100);
+    await hnRobo.run();
+    assert.equal(hnRobo.bucketErrors.size, 0);
+    // 한도를 넘어 거절당한 것(429)은 다시 보내지 않는다.
+    hn.calls = [];
+    hn.status = 429;
+    hn.flaky.set(flakyAt('robot'), 1);
+    const nr4 = await hnRobo.run();
+    assert.deepEqual([nr4.failed, hn.calls.length], [1, 11]); // 실패한 기간은 첫 낱말에서 멈췄다
+    await hnRobo.run();
+    assert.deepEqual([hnRobo.bucketErrors.size, [...hn.flaky.values()]], [0, [0, 0]]);
+    hn.status = 403;
+
+    // ── 서버: data/<출처>_<분야>/ 주소와 meta의 키 ──
+    const { server, close } = createApp({
+      store: mainStore, collector: main,
+      extra: { gh_robotics: { store: made.gh_robotics.store, collector: robo }, hf_robotics: { store: hfStore, collector: hfRobo }, hn_robotics: { store: made.hn_robotics.store, collector: hnRobo } },
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const liveMeta = await (await fetch(`${base}/data/meta.json`)).json();
+    assert.deepEqual([liveMeta.gh_robotics.category.label, liveMeta.gh_robotics.types.weekly[0].hasData, liveMeta.hf_robotics.category.tags, liveMeta.hn_robotics.types.all[0].hasData, liveMeta.gh_agents], ['로보틱스', true, ['robotics'], true, undefined]);
+    assert.equal((await (await fetch(`${base}/data/gh_robotics/weekly.rolling.json`)).json()).items[0].stars, 3000);
+    assert.equal((await (await fetch(`${base}/data/hf_robotics/monthly.rolling.json`)).json()).items[0].stars, 500);
+    assert.equal((await (await fetch(`${base}/data/hn_robotics/weekly.rolling.json`)).json()).items[0].id, 'both');
+    for (const p of ['/data/gh_agents/weekly.rolling.json', '/data/gh_nope/weekly.rolling.json', '/data/gh_robotics/weekly.2099-W01.json', '/data/gh_robotics/state/weekly.rolling.json', '/data/constructor/weekly.rolling.json', '/data/gh_Robotics/weekly.rolling.json']) {
+      assert.equal((await fetch(base + p)).status, 404, p); // 띄우지 않은 분야, 없는 기간, 출처가 아닌 이름
+    }
+    assert.equal((await fetch(`${base}/api/refresh?src=gh_robotics&type=weekly&key=rolling`, { method: 'POST' })).status, 429); // 방금 받았으므로 쿨다운
+    assert.equal((await fetch(`${base}/api/refresh?src=constructor&type=weekly&key=rolling`, { method: 'POST' })).status, 404);
+    const pageHtml = await (await fetch(`${base}/`)).text();
+    assert.match(pageHtml, /<div class="cats" id="cats" role="group" aria-label="분야" hidden><\/div>/); // 분야 단추가 들어갈 자리
+    // 모아 보기(여러 출처를 한 화면에 나란히): 탭, 볼 곳을 고르는 단추, 카드가 들어갈 자리. 주소의 앞머리(mix)는 화면 코드가 안다.
+    assert.match(pageHtml, /<button type="button" data-src="mix" aria-pressed="false" hidden>모아 보기<\/button>/);
+    assert.match(pageHtml, /<div class="picks" id="picks" role="group" aria-label="모아 볼 곳" hidden><\/div>/);
+    assert.match(pageHtml, /<section class="multi" id="multi" aria-label="출처별 순위" hidden><\/section>/);
+    assert.match(await (await fetch(`${base}/app.js`)).text(), /SOURCES\.mix = \{/);
+    close();
+    server.closeAllConnections();
+
+    // ── 빌드: data/<출처>_<분야>/ 아래에 쓰고, 다음 빌드가 배포본에서 이어받는다 ──
+    const quiet = { log: () => {} };
+    gh.calls = [];
+    gh.peak = 0;
+    hf.calls = [];
+    hf.peak = 0;
+    hn.calls = [];
+    const out1 = path.join(TMP, 'siteC1');
+    const b1 = await build({ cfg: cfgC('buildC1'), out: out1, search: ghSearch, api, ...quiet });
+    assert.deepEqual([b1.written, b1.ran, b1.failed, b1.left], [6, 6, 0, 0]);
+    assert.deepEqual([b1.gh_robotics, b1.gh_agents], [{ written: 6, loaded: 0, ran: 6, failed: 0, left: 0 }, { written: 6, loaded: 0, ran: 6, failed: 0, left: 0 }]);
+    assert.deepEqual(['hf', 'hfd', 'hn', 'hf_robotics', 'hfd_robotics', 'hn_robotics'].map((n) => [b1[n].written, b1[n].failed]), Array.from({ length: 6 }, () => [6, 0]));
+    assert.deepEqual([gh.calls.length, gh.peak, gh.calls.slice(0, 3)], [18, 1, ['all', 'robotics', 'agents']]);
+    // Hugging Face는 한도를 나눠 쓰므로 전체 순위와 분야별 순위를 차례로(겹치지 않게) 받는다. Hacker News의 분야별 순위는 낱말마다 받는다.
+    assert.deepEqual([hf.peak, hf.calls.filter((c) => c.startsWith('datasets:tag=robotics')).length, hf.calls.filter((c) => c.includes(':all@')).length], [1, 2, 6]);
+    assert.deepEqual([hn.calls.filter((q) => !q).length, hn.calls.filter((q) => q).length], [6, 12]);
+    for (const f of ['data/gh_robotics/weekly.rolling.json', 'data/gh_robotics/state/weekly.rolling.json', 'data/gh_agents/all.time.json', 'data/hf_robotics/monthly.rolling.json', 'data/hfd_robotics/state/all.time.json', 'data/hn_robotics/weekly.rolling.json']) {
+      assert.ok(fs.existsSync(path.join(out1, f)), f);
+    }
+    assert.equal(fs.existsSync(path.join(out1, 'data/hf_agents')), false); // 그 출처의 낱말을 적지 않은 분야는 만들지 않는다
+    const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    // 화면은 목록에 실린 순서대로 분야를 늘어놓는다: 로보틱스, 에이전트.
+    assert.deepEqual(Object.keys(meta1).filter((k) => k.includes('_')), ['gh_robotics', 'hf_robotics', 'hfd_robotics', 'hn_robotics', 'gh_agents']);
+    assert.deepEqual([meta1.gh_agents.category, meta1.hfd_robotics.category.terms, meta1.category, meta1.hf.category], [{ id: 'agents', label: '에이전트', terms: ['agent'] }, ['robot'], undefined, undefined]);
+    assert.ok(periods.TYPES.every((t) => meta1.gh_robotics.types[t].every((b) => b.hasData && b.version === 1 && !b.error)));
+    const chart1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/gh_robotics/weekly.rolling.json'), 'utf8'));
+    assert.deepEqual([chart1.items.length, chart1.items[0].stars, chart1.items[0].gain, chart1.query.startsWith('robot OR ros2')], [100, 3000, null, true]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(out1, 'data/weekly.rolling.json'), 'utf8')).items[0].stars, 5000); // 전체 순위와 섞이지 않는다
+
+    // 한 시간 뒤 새 기계에서 다시 빌드: 분야별 순위도 배포본에서 이어받아 증가를 계산한다.
+    for (const dir of fs.readdirSync(path.join(out1, 'data'), { withFileTypes: true }).filter((d) => d.isDirectory())) {
+      const folder = dir.name === 'state' ? path.join(out1, 'data/state') : path.join(out1, 'data', dir.name, 'state');
+      for (const name of fs.readdirSync(folder)) {
+        const st = JSON.parse(fs.readFileSync(path.join(folder, name), 'utf8'));
+        st.fetchedAt -= 3_600_000;
+        for (const p of st.history) p.t -= 3_600_000;
+        fs.writeFileSync(path.join(folder, name), JSON.stringify(st));
+      }
+    }
+    const served = (dir) => async (url) => {
+      const f = path.join(dir, url.replace('https://example.test/site/', ''));
+      const found = fs.existsSync(f);
+      return { status: found ? 200 : 404, ok: found, text: async () => fs.readFileSync(f, 'utf8') };
+    };
+    gh.bump = 9;
+    const out2 = path.join(TMP, 'siteC2');
+    const b2 = await build({ cfg: cfgC('buildC2'), out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api, fetchImpl: served(out1), ...quiet });
+    assert.deepEqual([b2.loaded, b2.gh_robotics.loaded, b2.gh_agents.loaded, b2.hf_robotics.loaded, b2.hn_robotics.loaded], [6, 6, 6, 6, 6]);
+    const chart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/gh_robotics/weekly.rolling.json'), 'utf8'));
+    assert.deepEqual([chart2.version, chart2.items[0].stars, chart2.items[0].gain, chart2.items[0].move], [2, 3009, 9, 0]);
+
+    // 분야를 설정에서 빼면 그 분야의 것은 이어받지도, 싣지도 않는다.
+    const out3 = path.join(TMP, 'siteC3');
+    const b3 = await build({ cfg: cfgC('buildC3', { categories: { listed: none, hfPages: 2, list: [list[1]] } }), out: out3, seedUrl: 'https://example.test/site/', search: ghSearch, api, fetchImpl: served(out2), ...quiet });
+    const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
+    assert.deepEqual([b3.gh_robotics, b3.gh_agents.loaded, meta3.gh_robotics, Boolean(meta3.gh_agents), fs.existsSync(path.join(out3, 'data/gh_robotics'))], [undefined, 6, undefined, true, false]);
+    ok('분야별 순위: 설정 검증, GitHub 질의와 한도 나눠 쓰기, Hugging Face 조건 합치기, Hacker News 낱말 합치기, 잠깐의 실패 다시 받기, 서버 주소, 빌드와 이어받기');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

@@ -97,6 +97,65 @@ module.exports = {
     refresh: HOUR, // 로컬 서버가 다시 받는 간격(정적 사이트는 빌드할 때 한 번)
   },
 
+  // 분야별 순위(lib/categories.js): GitHub·Hugging Face·Hacker News 탭에서 분야를 고르면 그 분야 것만 모은 순위를 본다.
+  // 전체 순위 100개를 거르는 것이 아니라, 분야마다 따로 받아 온 그 분야의 상위 100개다.
+  // 이 항목을 지우면(null) 분야 없이 돈다.
+  categories: {
+    // 분야를 하나 더할 때마다 받아 올 것이 그만큼 늘어난다(GitHub 검색은 분야 × 기간마다 한 번). 그래서 전체 순위보다
+    // 기간 목록을 짧게 두고(listed: 노출할 과거 구간 수. 연간은 출처마다의 시작 연도부터 모두),
+    // 끝난 기간은 덜 자주 다시 확인한다(refresh: 위 refresh의 같은 이름을 덮어쓴다).
+    listed: { weekly: 4, monthly: 6 },
+    refresh: { recentClosed: DAY, closed: 7 * DAY, archive: 30 * DAY },
+    // Hugging Face에서 태그(이름) 하나를 훑는 쪽 수 상한(한 쪽에 1,000개). 여기까지 가도 남은 것이 있으면 좋아요가 많은 쪽만 순위에 넣는다.
+    // 대부분의 태그는 몇 쪽이면 끝나고, 아주 큰 태그(text-generation 등)만 여기까지 간다: 20쪽이면 좋아요 4~5개까지 내려가고 10초쯤 걸린다.
+    hfPages: 20,
+    // 분야 목록. 적힌 순서대로 화면에 나온다. 어떤 것이 그 분야에 드는지는 출처마다 낱말로 적는다(적지 않은 출처에는 그 분야가 없다).
+    //   id      화면 주소(#weekly/rolling/robotics)와 폴더 이름(data/gh_robotics/)에 들어간다. 영문 소문자·숫자·-
+    //   label   화면에 보일 이름
+    //   github  이름·설명·토픽에 이 낱말 가운데 하나라도 든 저장소(6개까지. 띄어 쓴 낱말은 그 구절)
+    //   hf      tags: 이 태그가 붙은 것(모델의 작업 종류 robotics, 데이터셋의 task_categories:robotics 등. 종류에 없는 태그는 빈 채로 넘어간다)
+    //           search: 이름에 이 글자가 든 것
+    //   hn      제목에 이 낱말로 시작하는 낱말이 든 글(agent → agent, agents, agentic. 띄어 쓴 낱말은 그 구절)
+    // 낱말로 고르는 것이라 다른 뜻으로 쓰인 것이 섞이거나 그 낱말을 쓰지 않은 것이 빠질 수 있다. 낱말을 바꿔 가며 다듬는다.
+    list: [
+      {
+        id: 'agents',
+        label: '에이전트 AI',
+        github: ['agent', 'agents', 'agentic', 'mcp'],
+        hf: { tags: ['agent', 'agents'], search: ['agent'] },
+        hn: ['agent', 'mcp'],
+      },
+      {
+        id: 'robotics',
+        label: '로보틱스',
+        github: ['robot', 'robots', 'robotics', 'ros2', 'humanoid', 'embodied'],
+        hf: { tags: ['robotics', 'task_categories:robotics'], search: ['robot'] },
+        hn: ['robot', 'humanoid'],
+      },
+      {
+        id: 'llm',
+        label: 'LLM',
+        github: ['llm', 'llms', 'gpt', 'chatgpt', 'language model'],
+        hf: { tags: ['text-generation', 'task_categories:text-generation'], search: ['llm'] },
+        hn: ['llm', 'gpt', 'chatgpt', 'claude', 'gemini', 'llama'],
+      },
+      {
+        id: 'genmedia',
+        label: '이미지·영상 생성',
+        github: ['diffusion', 'text-to-image', 'text-to-video', 'image generation', 'video generation', 'comfyui'],
+        hf: { tags: ['text-to-image', 'text-to-video', 'image-to-video', 'task_categories:text-to-image', 'task_categories:text-to-video'], search: ['diffusion'] },
+        hn: ['diffusion', 'image generation', 'video generation', 'midjourney'],
+      },
+      {
+        id: 'speech',
+        label: '음성',
+        github: ['tts', 'speech', 'voice', 'asr'],
+        hf: { tags: ['text-to-speech', 'automatic-speech-recognition', 'task_categories:text-to-speech', 'task_categories:automatic-speech-recognition'], search: ['tts'] },
+        hn: ['tts', 'speech', 'voice'],
+      },
+    ],
+  },
+
   // 정적 사이트 빌드(lib/build.js, GitHub Actions + Pages)용.
   //   every : 빌드가 도는 간격(하루 두 번). 화면에 "약 12시간마다"로 표시된다.
   //   at    : 예약 실행 시각(UTC). 한국 시간 9시·21시 = UTC 0시·12시. 화면은 이 시각이 지난 뒤에야 새 판을 확인한다.

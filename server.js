@@ -25,19 +25,21 @@ const STATIC = {
   '/icon-maskable-512.png': ['icon-maskable-512.png', 'image/png'],
   '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
 };
-// data/<종류>.<키>.json (GitHub), data/<출처>/<종류>.<키>.json (hf, hn, as …). 종류와 키가 실제로 있는지는 수집기가 판단한다.
-const CHART_PATH = new RegExp(`^/data/(?:(${registry.NAMES.join('|')})/)?([a-z]+)\\.([\\w-]+)\\.json$`);
+// data/<종류>.<키>.json (GitHub), data/<출처>/<종류>.<키>.json (hf, hn, as …), data/<출처>_<분야>/<종류>.<키>.json (분야별 순위: gh_robotics …).
+// 그런 출처가 있는지, 종류와 키가 실제로 있는지는 아래에서 출처 목록과 수집기가 판단한다.
+const CHART_PATH = /^\/data\/(?:([a-z]+(?:_[a-z][a-z0-9-]*)?)\/)?([a-z]+)\.([\w-]+)\.json$/;
 
 /**
  * HTTP 서버를 만든다(아직 듣지는 않는다).
  * @param {object} o
  * @param {object} o.store, o.collector GitHub 쪽 저장소와 수집기
  * @param {Object<string, {store: object, collector: object}>} [o.extra] 덧붙는 출처(lib/sources.js의 이름 → 저장소와 수집기).
- *   여기에 없는 출처는 그 탭 없이 돈다
+ *   여기에 없는 출처는 그 탭 없이 돈다. 분야별 순위(gh_robotics, hf_agents …)도 여기에 든다
  */
 function createApp({ store, collector, extra = {} }) {
-  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh'로, 나머지는 lib/sources.js의 이름(hf, hn, as)으로 부른다.
+  // 출처별 저장소와 수집기. 화면은 GitHub을 'gh'로, 나머지는 lib/sources.js의 이름(hf, hn, as, gh_robotics …)으로 부른다.
   const sources = { gh: { store, collector }, ...extra };
+  const known = (name) => (Object.hasOwn(sources, name) ? sources[name] : null); // 주소에 적힌 이름이 실제 출처인지
 
   // ── 실시간 푸시(SSE) ─────────────────────────────────────────────
   const clients = new Set();
@@ -186,7 +188,7 @@ function createApp({ store, collector, extra = {} }) {
       if (pathname === '/data/meta.json') return sendJson(req, res, 200, meta());
       const chart = CHART_PATH.exec(pathname);
       if (chart) {
-        const source = sources[chart[1] || 'gh'];
+        const source = known(chart[1] || 'gh');
         if (!source) return sendJson(req, res, 404, { error: 'not found' });
         return sendChart(req, res, source, chart[2], chart[3]);
       }
@@ -198,7 +200,7 @@ function createApp({ store, collector, extra = {} }) {
       if (!sameOrigin(req)) return sendJson(req, res, 403, { error: 'forbidden' });
       const type = url.searchParams.get('type') || '';
       const key = url.searchParams.get('key') || '';
-      const source = sources[url.searchParams.get('src') || 'gh'];
+      const source = known(url.searchParams.get('src') || 'gh');
       const result = source ? source.collector.request(type, key, { force: true }) : { ok: false, reason: 'invalid' };
       return sendJson(req, res, result.ok ? 202 : result.reason === 'invalid' ? 404 : 429, result);
     }
@@ -217,15 +219,16 @@ function createApp({ store, collector, extra = {} }) {
 function main() {
   const cfg = require('./config');
   const { Store } = require('./lib/store');
-  const { Collector } = require('./lib/collector');
+  const { Collector, Gate } = require('./lib/collector');
 
   const store = new Store(cfg);
   const cached = store.load();
-  const collector = new Collector({ cfg, store });
+  const gate = new Gate(cfg.token); // GitHub 검색 한도: 전체 순위와 분야별 순위가 함께 본다
+  const collector = new Collector({ cfg, store, gate });
 
-  // 덧붙는 출처(설정에서 켜 둔 것만): 캐시를 불러온 뒤 수집기를 만든다.
+  // 덧붙는 출처(설정에서 켜 둔 것만)와 분야별 순위: 캐시를 불러온 뒤 수집기를 만든다.
   const extra = {};
-  for (const [name, s] of Object.entries(registry.create(cfg))) {
+  for (const [name, s] of Object.entries(registry.create(cfg, {}, { gate }))) {
     s.store.load();
     extra[name] = { store: s.store, collector: s.make() };
   }

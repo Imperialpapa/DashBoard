@@ -15,7 +15,8 @@
   //   dir: 순위 파일이 놓인 곳(data/ 아래)     types: 위쪽 탭 [주소에 쓰는 이름, 보이는 이름]
   //   home: 기본으로 여는 [종류, 키]            bucket: 고르는 단위를 부르는 말(기간 / 차트)
   //   facet: 언어 자리에 보여 주는 분류         made: 날짜를 부르는 말(생성 / 등록 / 출시)
-  //   pool, order: 기간 설명에 쓰는 말("… 만들어진 공개 저장소 가운데 스타가 많은 순으로 …")
+  //   pool, order: 기간 설명에 쓰는 말("… 만들어진 공개 저장소 가운데 스타가 많은 순으로 …").
+  //                pool은 [어떻게 생긴, 무엇]으로 나눠 적는다: 분야를 골랐으면 그 사이에 분야 이름이 들어간다("만들어진 로보틱스 분야 공개 저장소")
   //   plainName: 이름이 "주인/이름" 꼴이 아니다(제목이나 앱 이름이라 /로 나누지 않는다)
   //   pending: 서버 방식에서 아직 받는 중일 때의 안내 [제목, 본문]
   //   tab, sub: 한 탭 안에 묶이는 출처들(tab이 같다)과, 그 탭 안에서 이 출처를 부르는 이름
@@ -26,7 +27,7 @@
   const hugging = ({ dir, sub, unit, unitGa, unitEul, facet, facetOr, note }) => ({
     name: 'Hugging Face', title: 'Hugging Face 베스트', tab: 'hf', sub, dir, types: periodTypes('좋아요'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
     bucket: '기간', unit, score: '좋아요', mark: '♥', facet, noFacet: `${facet} 표시 없음`, made: '생성',
-    pool: `만들어진 공개 ${unit}`, order: '좋아요가 많은 순',
+    pool: ['만들어진', `공개 ${unit}`], order: '좋아요가 많은 순',
     rankSort: '좋아요순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
     searchHint: `${unit} 이름으로 찾기`,
     histHint: `순위에 든 ${unitGa} 언제 만들어졌는지 보여 줍니다.`,
@@ -45,7 +46,7 @@
     gh: {
       name: 'GitHub', title: 'GitHub 베스트', dir: '', types: periodTypes('스타'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '저장소', score: '스타', mark: '★', facet: '언어', noFacet: '언어 표시 없음', made: '생성',
-      pool: '만들어진 공개 저장소', order: '스타가 많은 순',
+      pool: ['만들어진', '공개 저장소'], order: '스타가 많은 순',
       rankSort: '스타순', gainSort: '최근 증가순', histTitle: '만들어진 시점',
       searchHint: '저장소 이름이나 설명으로 찾기',
       histHint: '순위에 든 저장소가 언제 만들어졌는지 보여 줍니다.',
@@ -73,7 +74,7 @@
     hn: {
       name: 'Hacker News', title: 'Hacker News 베스트', dir: 'hn/', types: periodTypes('점수'), home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
       bucket: '기간', unit: '글', score: '점수', scoreUnit: '점', mark: '▲', facet: '사이트', noFacet: '사이트 없음', made: '등록',
-      pool: '올라온 글', order: '점수가 높은 순', plainName: true, searchFacet: true,
+      pool: ['올라온', '글'], order: '점수가 높은 순', plainName: true, searchFacet: true,
       rankSort: '점수순', gainSort: '최근 증가순', histTitle: '올라온 시점',
       searchHint: '제목, 사이트, 올린 사람으로 찾기',
       histHint: '순위에 든 글이 언제 올라왔는지 보여 줍니다.',
@@ -92,7 +93,7 @@
       typeNames: { free: '무료 앱', paid: '유료 앱', grossing: '최고 매출' },
       home: ['free', 'all'], homeLabel: '무료 종합 차트 보기',
       bucket: '차트', unit: '앱', score: '평가', mark: '평가', facet: '카테고리', noFacet: '카테고리 없음', made: '출시',
-      plainName: true,
+      plainName: true, noCats: true, // 스토어의 카테고리가 따로 있어 분야를 두지 않는다
       rankSort: '차트순', gainSort: '평가 증가순', histTitle: '출시 시점',
       searchHint: '앱 이름이나 개발사로 찾기',
       histHint: '차트에 오른 앱이 언제 출시됐는지 보여 줍니다.',
@@ -107,6 +108,23 @@
       ],
     },
   };
+  // 모아 보기(#mix/…)는 출처가 아니라 화면 방식이다: 같은 기간·같은 분야의 순위를 출처마다 몇 개씩 나란히 보여 준다.
+  // 스타·좋아요·점수는 서로 견줄 수 없는 수라 한 줄로 합치지 않는다. 낱말 표에 함께 두는 것은 주소·탭·기간 고르기를 같이 쓰기 때문이다.
+  SOURCES.mix = {
+    name: '모아 보기', title: '베스트 모아 보기', dir: '', multi: true, home: ['weekly', 'rolling'], homeLabel: '최근 7일 보기',
+    types: [['weekly', '주간'], ['monthly', '월간'], ['yearly', '연간'], ['all', ALL_LABEL]],
+    bucket: '기간', unit: '항목', score: '수', mark: '', facet: '분류', noFacet: '분류 없음', made: '생성',
+    pool: ['나온', '것'], order: '많은 순', rankSort: '순위순', gainSort: '최근 증가순', histTitle: '', searchHint: '', histHint: '',
+    none: '', noMatch: ['', ''],
+    foot: [
+      '모아 보기는 같은 기간(UTC 기준)에 새로 나온 것의 순위를 출처마다 10위까지 나란히 보여 줍니다. 스타·좋아요·점수는 서로 견줄 수 없는 수라 한 줄로 합치지 않습니다. 카드의 제목이나 "100위까지 보기"를 누르면 그 출처의 순위표로 갑니다.',
+      '분야를 고르면 모든 출처가 그 분야의 순위로 바뀝니다. 출처마다 그 분야를 어떤 낱말로 가렸는지는 그 출처의 순위표 아래에 적혀 있습니다. 나란히 볼 곳은 위의 단추로 켜고 끕니다(이 브라우저에 기억됩니다). App Store는 기간과 분야가 없는 차트라 여기에 나오지 않습니다.',
+      '출처마다 다루는 기간이 달라(Hugging Face는 2023년부터, 분야별 순위는 최근 4주·6달까지) 어떤 기간에는 일부 출처의 순위가 없습니다.',
+    ],
+  };
+  const MIX = ['gh', 'hf', 'hfs', 'hfd', 'hn']; // 모아 보기에 나오는 출처: 기간으로 나누는 것 모두
+  const MIX_TOP = 10; // 출처마다 보여 주는 개수
+
   // 일부 출처에만 있는 정렬: 포크 수는 GitHub에만, 다운로드 수는 Hugging Face의 모델과 데이터셋에만(Space에는 없다),
   // 댓글 수는 Hacker News에만 있다.
   const EXTRA_SORTS = { forks: ['gh'], downloads: ['hf', 'hfd'], comments: ['hn'] };
@@ -137,13 +155,17 @@
     langs: $('#langs'), hist: $('#hist'), status: $('#status'),
     refreshBtn: $('#refreshBtn'), refreshMsg: $('#refreshMsg'), tip: $('#tip'),
     spamLabel: $('#spamLabel'), spamToggle: $('#spamToggle'), spamCount: $('#spamCount'),
-    sources: $('#sources'), subs: $('#subs'), brandText: $('#brandText'), unitHead: $('#unitHead'), scoreHead: $('#scoreHead'),
+    sources: $('#sources'), subs: $('#subs'), cats: $('#cats'), picks: $('#picks'), multi: $('#multi'), brandText: $('#brandText'), unitHead: $('#unitHead'), scoreHead: $('#scoreHead'),
     facetLabel: $('#facetLabel'), facetTitle: $('#facetTitle'), facetHint: $('#facetHint'), histHint: $('#histHint'),
     histTitle: $('#histTitle'), ageField: $('#ageField'), age: $('#ageSelect'), foot: $('#foot'),
   };
 
   const state = {
-    src: 'gh', // 출처: SOURCES의 이름(gh, hf, hfs, hfd, hn, as)
+    src: 'gh', // 출처: SOURCES의 이름(gh, hf, hfs, hfd, hn, as). 'mix'는 여러 출처를 나란히 보는 모아 보기
+    mixOff: new Set(), // 모아 보기에서 꺼 둔 출처
+    mix: new Map(), // 모아 보기에 나온 순위들: 출처 → {id, view: loading | ready | pending | none | error, data}
+    cat: '', // 분야(agents, robotics …). 비어 있으면 분야를 가리지 않은 전체 순위
+    cats: [], // 이 사이트에 있는 분야: [{id, label}] (목록을 받아야 안다)
     type: 'weekly',
     key: 'rolling',
     sort: 'rank',
@@ -154,8 +176,8 @@
     items: [], // 지금 보기 방식(스팸 숨김 여부)에 맞춘 순위표 항목
     meta: null, // 기간 목록
     metaDay: 0, // 기간 목록을 받은 날(UTC 일 번호)
-    status: new Map(), // 'src:type/key' → 그 기간의 수집 상태
-    collectors: {}, // 출처별 수집기 상태
+    status: new Map(), // 'src:type/key' → 그 기간의 수집 상태(분야별 순위는 'src_cat:type/key')
+    collectors: {}, // 출처별(분야별 순위는 출처_분야별) 수집기 상태
     data: null, // 지금 보고 있는 순위 데이터
     dataId: '',
     view: 'loading', // loading | ready | pending | invalid | offline
@@ -227,14 +249,55 @@
   const tabOf = (src) => SOURCES[src].tab || src;
   const family = (tab) => Object.keys(SOURCES).filter((src) => tabOf(src) === tab);
   const langOf = (r) => r.lang || S().noFacet;
-  const idOf = (type, key, src = state.src) => `${src}:${type}/${key}`;
+  /**
+   * 순위 하나하나가 어디에 속하는지 가리키는 이름: 출처 이름 그대로이거나, 분야를 골랐으면 "출처_분야"(gh_robotics, hf_agents …).
+   * 서버가 쓰는 이름과 같아서 data/ 아래 폴더, meta의 키, 실시간 알림의 src가 모두 이것이다.
+   */
+  const scopeOf = (src = state.src, cat = state.cat) => (cat ? `${src}_${cat}` : src);
+  const idOf = (type, key, scope = scopeOf()) => `${scope}:${type}/${key}`;
   const currentId = () => idOf(state.type, state.key);
-  /** 한 출처의 기간(차트) 목록과 상태. GitHub 것은 meta 바로 아래에, 나머지는 meta.hf, meta.as에 있다(없으면 null). */
-  const metaOf = (src = state.src) => (state.meta ? (src === 'gh' ? state.meta : state.meta[src]) || null : null);
-  const listing = () => {
-    const m = metaOf();
-    return (m && m.types[state.type]) || [];
+  /**
+   * 한 출처(또는 출처_분야)의 기간(차트) 목록과 상태. GitHub 것은 meta 바로 아래에, 나머지는 meta.hf, meta.as, meta.gh_robotics에 있다
+   * (없으면 null). 이름을 주지 않으면 지금 보고 있는 것이다.
+   */
+  const metaOf = (scope = scopeOf()) => (state.meta ? (scope === 'gh' ? state.meta : state.meta[scope]) || null : null);
+  /** 순위 파일이 놓인 곳(data/ 아래). 분야별 순위는 "출처_분야/" 폴더에 있다. */
+  const dirOf = (src = state.src, cat = state.cat) => (cat ? `${scopeOf(src, cat)}/` : SOURCES[src].dir);
+  /** 모아 보기를 보고 있는지 */
+  const isMix = () => Boolean(S().multi);
+  /** 모아 보기에서 한 출처를 부르는 이름: "GitHub 저장소", "Hugging Face 모델", "Hacker News 글" */
+  const mixName = (src) => `${SOURCES[src].name} ${SOURCES[src].sub || SOURCES[src].unit}`;
+  /** 모아 보기에 나올 수 있는 출처(그 분야의 순위가 이 사이트에 있는 것)와, 그 가운데 켜 둔 것 */
+  const mixHave = (cat = state.cat) => MIX.filter((src) => metaOf(scopeOf(src, cat)));
+  const mixShown = (cat = state.cat) => mixHave(cat).filter((src) => !state.mixOff.has(src));
+  /** 그 출처에 그 분야의 순위가 있는지(모아 보기는 어느 한 출처에라도 있으면) */
+  const hasCat = (src, cat) => (SOURCES[src].multi ? mixHave(cat).length > 0 : Boolean(metaOf(scopeOf(src, cat))));
+  /**
+   * 한 출처·분야·종류의 기간 목록. 모아 보기는 켜 둔 출처의 목록 가운데 가장 긴 것을 쓴다:
+   * 모두 같은 규칙으로 만든 목록이라(최근 것부터, 길이와 시작 연도만 다르다) 긴 것이 짧은 것을 품는다.
+   */
+  const listOf = (src, cat, type) => {
+    const lists = (SOURCES[src].multi ? mixShown(cat) : [src]).map((x) => {
+      const m = metaOf(scopeOf(x, cat));
+      return (m && m.types[type]) || [];
+    });
+    return lists.reduce((best, list) => (list.length > best.length ? list : best), []);
   };
+  /** 지금 고른 분야의 이름. 이 화면에 그 분야의 순위가 없으면(없는 분야이거나 아직 목록을 받기 전) 빈 글자다. */
+  const catName = () => {
+    const c = state.cat && hasCat(state.src, state.cat) ? state.cats.find((x) => x.id === state.cat) : null;
+    return c ? c.label : '';
+  };
+  /** 지금 고른 분야의 이름과 낱말(서버가 목록에 실어 준다): {id, label, terms, tags}. 분야를 고르지 않았거나 없는 분야면 null */
+  const catInfo = () => {
+    const m = state.cat ? metaOf() : null;
+    return (m && m.category) || null;
+  };
+  const catLabel = () => {
+    const c = catInfo() || state.cats.find((x) => x.id === state.cat);
+    return c ? c.label : state.cat;
+  };
+  const listing = () => listOf(state.src, state.cat, state.type);
   /** App Store가 어느 나라 스토어인지 */
   const countryName = () => {
     const m = metaOf('as');
@@ -247,18 +310,21 @@
   const firstKey = (src, type) => (type === 'all' ? ALL_KEY : SOURCES[src].home[1]);
   const currentDesc = () => listing().find((d) => d.key === state.key) || null;
   const currentStatus = () => state.status.get(currentId()) || null;
-  const collector = () => state.collectors[state.src] || null;
+  const collector = () => state.collectors[scopeOf()] || null;
 
   /**
    * 서버는 "받은 그대로의 상위 N개"와 "스팸 의심을 뺀 상위 N개"를 한 목록에 담아 준다.
    * 지금 보기 방식에 해당하는 쪽만 골라, 그 방식의 순위·변동을 rank·move로 맞춘다.
    */
-  function chartItems() {
-    const d = state.data;
-    if (state.view !== 'ready' || !d) return [];
+  function itemsOf(d) {
     const top = d.top || 100;
     if (!state.hideSpam) return d.items.filter((r) => r.rank <= top);
     return d.items.filter((r) => !r.spam && r.crank <= top).map((r) => ({ ...r, rank: r.crank, move: r.cmove }));
+  }
+
+  function chartItems() {
+    const d = state.data;
+    return state.view === 'ready' && d ? itemsOf(d) : [];
   }
 
   /** 스팸 의심 개수: 숨김 상태에서는 건너뛴 개수, 아니면 순위표에 섞여 있는 개수 */
@@ -286,9 +352,9 @@
     return `<i class="lang-dot"${color ? ` style="background:${color}"` : ''}></i>`;
   }
 
-  // ── 주소(#weekly/rolling, #hf/weekly/rolling, #hn/weekly/rolling, #as/free/all) ────
-  // GitHub은 앞머리 없이, 나머지 출처는 그 이름을 앞에 붙인다.
-  const HASH = new RegExp(`^#(?:(${Object.keys(SOURCES).filter((src) => src !== 'gh').join('|')})/)?([a-z]+)/([\\w-]+)$`);
+  // ── 주소(#weekly/rolling, #hf/weekly/rolling, #hn/weekly/rolling, #as/free/all, #weekly/rolling/robotics, #mix/weekly/rolling/robotics) ────
+  // GitHub은 앞머리 없이, 나머지 출처(와 모아 보기 mix)는 그 이름을 앞에 붙인다. 분야를 골랐으면 그 id가 맨 뒤에 붙는다.
+  const HASH = new RegExp(`^#(?:(${Object.keys(SOURCES).filter((src) => src !== 'gh').join('|')})/)?([a-z]+)/([\\w-]+)(?:/([a-z][a-z0-9-]*))?$`);
   function readHash() {
     const m = HASH.exec(location.hash);
     state.src = m && m[1] ? m[1] : 'gh';
@@ -296,20 +362,43 @@
     const known = Boolean(m) && s.types.some(([t]) => t === m[2]); // 그 출처에 있는 종류인지
     state.type = known ? m[2] : s.home[0];
     state.key = known ? m[3] : s.home[1];
+    state.cat = known && m[4] && !s.noCats ? m[4] : ''; // 그런 분야가 실제로 있는지는 목록을 받아야 안다(없으면 "없는 분야"로 보인다)
   }
 
-  function go(type, key, src = state.src) {
-    const hash = `#${src === 'gh' ? '' : `${src}/`}${type}/${key}`;
+  const hashOf = (type, key, src = state.src, cat = state.cat) =>
+    `#${src === 'gh' ? '' : `${src}/`}${type}/${key}${cat && !SOURCES[src].noCats ? `/${cat}` : ''}`;
+
+  function go(type, key, src = state.src, cat = state.cat) {
+    const hash = hashOf(type, key, src, cat);
     if (location.hash === hash) return;
     location.hash = hash;
+  }
+
+  /** 분야별 순위가 무엇을 모은 것인지 알려 주는 글. 그 분야를 가리는 낱말은 서버가 목록(meta의 category)에 실어 준다. */
+  function catNote(c) {
+    const s = S();
+    const list = (words) => (words || []).join(', ');
+    const tags = c.tags && c.tags.length ? `그 분야의 태그(${list(c.tags)})가 붙` : '';
+    const named = c.terms && c.terms.length ? `이름에 그 분야의 낱말(${list(c.terms)})이 ` : '';
+    let which;
+    if (s.tab === 'hf') which = tags && named ? `${tags}었거나 ${named}든 ${s.unit}` : tags ? `${tags}은 ${s.unit}` : `${named}든 ${s.unit}`;
+    else if (state.src === 'hn') which = `제목에 그 분야의 낱말(${list(c.terms)})이 든 글`;
+    else which = `이름·설명·토픽에 그 분야의 낱말(${list(c.terms)})이 든 저장소`;
+    return (
+      `"${c.label}" 분야의 순위는 ${which}만 따로 모아 같은 방식으로 줄 세운 것입니다. 전체 순위 100개를 거른 것이 아니라 그 분야의 상위 100개입니다.` +
+      (state.src === 'hn' ? ' 낱말의 앞부분만 같아도 찾습니다(agent로 agents, agentic도).' : '') +
+      ' 낱말로 고르는 것이라 다른 뜻으로 쓰인 것이 섞이거나, 그 낱말을 쓰지 않은 것이 빠질 수 있습니다.'
+    );
   }
 
   /** 출처가 바뀌면 달라지는 고정 문구(제목, 탭, 표 머리, 안내문)를 맞춘다. */
   function applySource() {
     const s = S();
-    document.documentElement.dataset.src = state.src;
-    document.title = s.title;
+    const cat = catInfo();
+    document.documentElement.dataset.src = state.src; // 모아 보기(mix)에서는 스타일이 순위표와 오른쪽 레일을 감춘다
+    document.title = catName() ? `${s.title} · ${catName()}` : s.title; // 분야 이름은 목록을 받아야 안다(없는 분야면 붙이지 않는다)
     el.brandText.textContent = s.title;
+    el.multi.hidden = !s.multi;
     el.types.innerHTML = s.types.map(([t, label]) => `<button type="button" data-type="${t}" aria-pressed="false">${esc(label)}</button>`).join('');
     // 고르는 것이 기간인지(GitHub·Hugging Face) 차트 종류와 카테고리인지(App Store)에 맞춰 읽어 주는 이름을 바꾼다.
     const pick = state.src === 'as' ? '카테고리' : '기간';
@@ -334,7 +423,9 @@
     el.facetHint.textContent = `막대를 누르면 그 ${s.facet}만 보여 줍니다.`;
     el.histTitle.textContent = s.histTitle;
     el.histHint.textContent = s.histHint;
-    el.foot.innerHTML = s.foot.map((p) => `<p>${esc(p.replaceAll('{country}', countryName()))}</p>`).join('');
+    // 분야를 골랐으면 그 분야가 무엇을 모은 것인지를 순위 설명 바로 다음에 적는다.
+    const foot = cat ? [s.foot[0], catNote(cat), ...s.foot.slice(1)] : s.foot;
+    el.foot.innerHTML = foot.map((p) => `<p>${esc(p.replaceAll('{country}', countryName()))}</p>`).join('');
     el.spamLabel.hidden = state.src !== 'gh'; // 스팸 의심 규칙(스타 대비 포크)은 GitHub에만 있다
     el.ageField.hidden = state.src !== 'as'; // 출시 시기로 거르기는 App Store에만 있다
     el.age.value = String(state.age || '');
@@ -348,17 +439,24 @@
     // 서버 방식에서는 서버 시계에 맞춘다. 정적 사이트의 meta.now는 만든 시각이라 시계 보정에 쓸 수 없다.
     state.skew = state.live ? meta.now - Date.now() : 0;
     document.documentElement.dataset.mode = state.live ? 'live' : 'static';
-    for (const src of Object.keys(SOURCES)) {
-      const m = metaOf(src);
-      if (!m) continue;
-      state.collectors[src] = m.collector;
-      for (const type of Object.keys(m.types)) for (const b of m.types[type]) state.status.set(idOf(type, b.key, src), b);
+    // 출처마다, 그리고 분야별 순위(출처_분야)마다 목록이 하나씩 실려 온다. 분야 목록은 거기 적힌 것을 실린 순서대로 모은다.
+    const scopes = ['gh', ...Object.keys(meta).filter((k) => /^[a-z]+(_[a-z][a-z0-9-]*)?$/.test(k) && meta[k] && meta[k].types && meta[k].collector)];
+    const cats = [];
+    for (const scope of scopes) {
+      const m = metaOf(scope);
+      state.collectors[scope] = m.collector;
+      for (const type of Object.keys(m.types)) for (const b of m.types[type]) state.status.set(idOf(type, b.key, scope), b);
+      const c = scope.includes('_') ? m.category : null;
+      if (c && c.id && !cats.some((x) => x.id === c.id)) cats.push({ id: String(c.id), label: String(c.label || c.id) });
     }
-    if (state.src === 'as') applySource(); // 안내문에 들어가는 나라 이름은 목록을 받아야 안다
+    state.cats = cats;
+    // 안내문에 들어가는 나라 이름(App Store)과 분야의 낱말은 목록을 받아야 안다
+    if (state.src === 'as' || state.cat) applySource();
     renderNav();
     renderSub();
     renderSpam();
     renderStatus();
+    if (isMix()) renderMulti();
   }
 
   // 서버 방식과 정적 사이트가 같은 주소를 쓴다(주소는 모두 상대 경로: 하위 경로에 올려도 된다).
@@ -372,10 +470,10 @@
     const seq = ++state.loadSeq;
     const { type, key } = state;
     const id = idOf(type, key);
-    const dir = S().dir;
+    const dir = dirOf();
     clearTimeout(state.retryTimer);
 
-    // 이 사이트에 없는 출처(예: Hugging Face 수집을 끈 경우)는 요청하지 않는다.
+    // 이 사이트에 없는 출처(예: Hugging Face 수집을 끈 경우)나 없는 분야는 요청하지 않는다.
     if (state.meta && !metaOf()) {
       state.loadingId = '';
       state.view = 'invalid';
@@ -443,6 +541,64 @@
   }
 
   /**
+   * 모아 보기: 켜 둔 출처마다 지금 고른 기간·분야의 순위를 받는다. 이미 받아 둔 것은 판이 바뀌었을 때만 다시 받는다.
+   * 출처마다 따로 끝나므로, 하나가 늦거나 실패해도 나머지는 먼저 보인다.
+   */
+  async function loadMulti() {
+    const seq = ++state.loadSeq;
+    clearTimeout(state.retryTimer);
+    clearTimeout(multiTimer);
+    if (!state.meta) return; // 목록을 받아야 어느 출처에 무엇이 있는지 안다
+    const { type, key, cat } = state;
+    const next = new Map();
+    const jobs = [];
+    for (const src of mixShown()) {
+      const id = idOf(type, key, scopeOf(src, cat));
+      const st = state.status.get(id);
+      const old = state.mix.get(src);
+      const had = old && old.id === id && old.data ? old.data : null;
+      if (!listOf(src, cat, type).some((d) => d.key === key)) next.set(src, { id, view: 'none' }); // 이 출처는 이 기간을 다루지 않는다
+      else if (!state.live && st && !st.hasData) next.set(src, { id, view: 'pending' }); // 정적 사이트: 아직 만들어지지 않은 파일
+      else if (had && st && had.version === st.version) next.set(src, old);
+      else {
+        next.set(src, had ? { id, view: 'ready', data: had } : { id, view: 'loading' }); // 새 판을 받는 동안은 받아 둔 것을 둔다
+        jobs.push({ src, id, v: st && st.version ? `?v=${st.version}` : '' });
+      }
+    }
+    state.mix = next;
+    renderMulti();
+
+    await Promise.all(jobs.map(async ({ src, id, v }) => {
+      let card;
+      try {
+        const res = await fetch(`data/${dirOf(src, cat)}${type}.${encodeURIComponent(key)}.json${v}`, state.live ? undefined : { cache: 'no-cache' });
+        if (res.status === 202) card = { id, view: 'pending' }; // 서버가 지금 받는 중
+        else if (!res.ok) card = { id, view: 'none' };
+        else card = { id, view: 'ready', data: await res.json() };
+      } catch {
+        card = { id, view: 'error' };
+      }
+      if (seq !== state.loadSeq) return; // 그사이 다른 기간·분야로 갔다
+      state.mix.set(src, card);
+      renderMulti();
+    }));
+    if (seq !== state.loadSeq) return;
+    // 못 받은 것은 5초 뒤에 다시 받아 본다(서버가 받는 중인 것은 알림을 놓쳤을 때의 안전망).
+    const again = [...state.mix.values()].some((c) => c.view === 'error' || (state.live && c.view === 'pending'));
+    if (again) state.retryTimer = setTimeout(loadMulti, 5000);
+  }
+
+  // 서버가 한 번 훑으면 그 출처의 모든 기간이 한꺼번에 바뀌었다고 알려 오므로, 잠깐 모았다가 한 번만 다시 받는다.
+  let multiTimer = 0;
+  function scheduleMulti() {
+    clearTimeout(multiTimer);
+    multiTimer = setTimeout(loadMulti, 300);
+  }
+
+  /** 지금 화면에 맞는 것을 받는다: 한 출처의 순위 하나, 또는 모아 보기의 출처별 순위들. */
+  const loadView = (opts) => (isMix() ? loadMulti() : loadChart(opts));
+
+  /**
    * 정적 사이트: 새로 만들어진 판이 있는지 확인하고, 보고 있는 기간이 바뀌었으면 다시 받는다.
    * 다음 수집 예정 시각이 지나기 전에는 새 판이 있을 리 없으므로 아예 묻지 않고,
    * 지난 뒤에도(예약 실행은 늦어질 수 있다) POLL_GAP에 한 번만 묻는다.
@@ -466,6 +622,7 @@
     }
     if (state.meta && meta.builtAt === state.meta.builtAt) return;
     applyMeta(meta);
+    if (isMix()) return void loadMulti(); // 판이 바뀐 것만 다시 받는다
     const id = currentId();
     const st = state.status.get(id);
     const stale = !state.data || state.dataId !== id || (st && st.version !== state.data.version);
@@ -481,13 +638,20 @@
       applyMeta(JSON.parse(e.data));
       const st = currentStatus();
       // 끊겼다 다시 붙은 사이에 바뀐 내용이 있으면 따라잡는다.
-      if (again && st && st.hasData && (!state.data || st.version !== state.data.version)) loadChart({ live: true });
+      if (again && isMix()) loadMulti();
+      else if (again && st && st.hasData && (!state.data || st.version !== state.data.version)) loadChart({ live: true });
       renderLive();
     });
     es.addEventListener('bucket', (e) => {
       const st = JSON.parse(e.data);
       const id = idOf(st.type, st.key, st.src || 'gh');
       state.status.set(id, { ...state.status.get(id), ...st });
+      if (isMix()) {
+        // 모아 보기: 나란히 보이는 순위 가운데 하나가 새로 생겼거나 바뀌었으면 다시 받는다.
+        const card = [...state.mix.values()].find((c) => c.id === id);
+        if (card && st.hasData && (!card.data || card.data.version !== st.version)) scheduleMulti();
+        return;
+      }
       if (id !== currentId()) return;
       const stale = !state.data || state.dataId !== id || st.version !== state.data.version;
       if (st.hasData && stale && state.loadingId !== id) loadChart({ live: true });
@@ -520,7 +684,9 @@
     let shown = 0;
     for (const b of el.sources.querySelectorAll('button')) {
       const src = b.dataset.src;
-      b.hidden = !(src === 'gh' || src === tab || family(src).some((x) => metaOf(x)));
+      // 모아 보기는 나란히 볼 출처가 둘 이상 있을 때만 보인다.
+      if (SOURCES[src].multi) b.hidden = !(src === tab || mixHave('').length > 1);
+      else b.hidden = !(src === 'gh' || src === tab || family(src).some((x) => metaOf(x)));
       if (!b.hidden) shown += 1;
       b.setAttribute('aria-pressed', String(src === tab));
     }
@@ -536,11 +702,33 @@
         .map((src) => `<button type="button" data-sub="${src}" aria-pressed="${src === state.src}">${esc(SOURCES[src].sub || SOURCES[src].name)}</button>`)
         .join('');
     }
+    // 모아 보기에서 나란히 볼 곳을 고르는 단추. 켜 둔 것만 카드로 나온다(고를 것이 둘 이상일 때만 보인다).
+    const picks = isMix() ? mixHave() : [];
+    const pickSig = picks.map((src) => `${src}:${state.mixOff.has(src) ? 0 : 1}`).join(',');
+    if (el.picks.dataset.sig !== pickSig) {
+      el.picks.dataset.sig = pickSig;
+      el.picks.hidden = picks.length < 2;
+      el.picks.innerHTML = picks
+        .map((src) => `<button type="button" data-pick="${src}" aria-pressed="${!state.mixOff.has(src)}" data-tip="${esc(mixName(src))}">${esc(SOURCES[src].sub || SOURCES[src].name)}</button>`)
+        .join('');
+    }
+    // 분야 단추: 이 출처에 순위가 있는 분야만(또는 그 주소로 들어왔을 때) 보인다. 맨 앞의 "전체"는 분야를 가리지 않은 순위다.
+    const cats = S().noCats ? [] : state.cats.filter((c) => c.id === state.cat || hasCat(state.src, c.id));
+    const catSig = `${state.cat}|${cats.map((c) => `${c.id}:${c.label}`).join(',')}`;
+    if (el.cats.dataset.sig !== catSig) {
+      el.cats.dataset.sig = catSig;
+      el.cats.hidden = cats.length === 0;
+      el.cats.innerHTML =
+        '<span class="cats-label" aria-hidden="true">분야</span>' +
+        [{ id: '', label: '전체' }, ...cats]
+          .map((c) => `<button type="button" data-cat="${esc(c.id)}" aria-pressed="${c.id === state.cat}">${esc(c.label)}</button>`)
+          .join('');
+    }
     for (const b of el.types.querySelectorAll('button')) {
       b.setAttribute('aria-pressed', String(b.dataset.type === state.type));
     }
     const list = listing();
-    const sig = `${state.src}|${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
+    const sig = `${scopeOf()}|${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
     if (el.period.dataset.sig !== sig) {
       el.period.dataset.sig = sig;
       const known = list.some((d) => d.key === state.key);
@@ -568,6 +756,20 @@
     // 기간을 막 바꿔 새 데이터가 아직 안 왔으면 이전 기간의 설명을 보여 주지 않는다.
     const d = state.view === 'ready' && state.dataId === currentId() ? state.data : null;
     const desc = currentDesc();
+    // 아직 순위를 받기 전에 보여 주는 기간의 범위
+    const range = () => {
+      if (allTime()) return '처음부터 지금까지';
+      if (desc.kind === 'rolling') return `${ymd(desc.from)}부터 지금까지`;
+      return `${desc.label}, ${ymd(desc.from)} – ${md(desc.to)}`;
+    };
+    if (isMix()) {
+      // 모아 보기: "2026.11.10부터 지금까지 · 로보틱스 분야 · 5곳의 상위 10개씩"
+      const n = mixShown().length;
+      const bits = [desc ? range() : '', catName() ? `${catName()} 분야` : '', n ? `${n}곳의 상위 ${MIX_TOP}개씩` : ''].filter(Boolean);
+      if (bits.length) el.sub.textContent = bits.join(' · ');
+      else el.sub.innerHTML = '&nbsp;';
+      return;
+    }
     if (state.src === 'as') {
       // App Store는 기간이 아니라 차트다: "한국 App Store 게임 · 무료 앱 차트 상위 100개"
       const s = S();
@@ -577,9 +779,7 @@
     }
     if (!d) {
       if (!desc) el.sub.innerHTML = '&nbsp;';
-      else if (allTime()) el.sub.textContent = '처음부터 지금까지';
-      else if (desc.kind === 'rolling') el.sub.textContent = `${ymd(desc.from)}부터 지금까지`;
-      else el.sub.textContent = `${desc.label}, ${ymd(desc.from)} – ${md(desc.to)}`;
+      else el.sub.textContent = range();
       return;
     }
     const kind = desc ? desc.kind : d.to ? 'closed' : 'rolling';
@@ -594,8 +794,10 @@
     const s = S();
     // cut: 순위표가 다 차지 않았고, 이 수보다 적은 것은 아직 훑지 못했다(Hugging Face).
     const cut = d.cut && state.items.length < (d.top || 100) ? ` (${s.score} ${fmt(d.cut)}개 이상까지만 훑었습니다)` : '';
+    // 분야를 골랐으면 "만들어진 로보틱스 분야 공개 저장소 2,088개 가운데 …"
+    const pool = `${s.pool[0]} ${state.cat ? `${catLabel()} 분야 ` : ''}${s.pool[1]}`;
     el.sub.textContent =
-      `${when} ${s.pool}${total} 가운데 ${s.order}으로 ${state.items.length}개` +
+      `${when} ${pool}${total} 가운데 ${s.order}으로 ${state.items.length}개` +
       (skipped ? ` (스팸 의심 ${fmt(skipped)}개 제외)` : '') +
       cut;
   }
@@ -718,6 +920,90 @@
     </li>`;
   }
 
+  // ── 그리기: 모아 보기 ─────────────────────────────────────────
+  /** 모아 보기의 한 줄: 순위, 이름, 곁들임 한 줄, 수(스타·좋아요·점수). */
+  function miniHtml(r, src) {
+    const s = SOURCES[src];
+    const hn = src === 'hn';
+    const slash = s.plainName ? -1 : r.name.indexOf('/');
+    const owner = slash < 0 ? '' : r.name.slice(0, slash + 1);
+    const repo = slash < 0 ? r.name : r.name.slice(slash + 1);
+    const url = r.url.startsWith('https://') || (hn && r.url.startsWith('http://')) ? r.url : '#';
+    // 곁들임: GitHub은 설명, Hugging Face는 분류·라이브러리·다운로드 수, Hacker News는 원문 사이트와 토론 링크
+    let note;
+    if (hn) {
+      const talk = r.hn && r.hn.startsWith('https://news.ycombinator.com/') ? r.hn : '#';
+      note =
+        `${r.lang ? `<span>${esc(r.lang)}</span>` : ''}` +
+        `<a class="meta-link" href="${esc(talk)}" target="_blank" rel="noopener" data-tip="Hacker News의 토론 보기">댓글 ${fmt(r.comments || 0)}</a>`;
+    } else if (s.tab === 'hf') {
+      note = [r.lang, r.lib, r.downloads === undefined ? '' : `다운로드 ${fmt(r.downloads || 0)}`]
+        .filter(Boolean)
+        .map((x) => `<span>${esc(x)}</span>`)
+        .join('');
+    } else {
+      note = `<span class="mini-desc">${esc(r.desc || r.lang || '')}</span>`;
+    }
+    return `<li class="mini"${r.rank <= 3 ? ' data-top' : ''}>
+      <span class="mini-rank">${r.rank}</span>
+      <div class="mini-main">
+        <a class="name" href="${esc(url)}" target="_blank" rel="noopener"><span class="owner">${esc(owner)}</span><span class="repo-name">${esc(repo)}</span></a>
+        <p class="mini-note">${note}</p>
+      </div>
+      <span class="mini-score" data-tip="${esc(s.score)} ${fmt(r.stars)}${s.scoreUnit || '개'}">${fmt(r.stars)}</span>
+    </li>`;
+  }
+
+  /** 모아 보기의 카드 하나: 한 출처의 상위 몇 개와, 그 출처의 순위표로 가는 길. */
+  function cardHtml(src) {
+    const s = SOURCES[src];
+    const card = state.mix.get(src) || { view: 'loading' };
+    // 그 출처에 이 기간이 없으면(다루는 기간이 더 짧다) 그 출처의 최근 구간으로 보낸다.
+    const has = listOf(src, state.cat, state.type).some((d) => d.key === state.key);
+    const more = hashOf(state.type, has ? state.key : firstKey(src, state.type), src, state.cat);
+    const msg = (text) => `<p class="card-msg">${esc(text)}</p>`;
+    let body;
+    if (card.view === 'ready') {
+      const all = itemsOf(card.data);
+      const items = all.slice(0, MIX_TOP);
+      // 더 있으면 "100위까지 보기"(덜 찬 기간은 "44위까지 보기"), 이게 전부면 순위표로 가는 길만 둔다.
+      const link = all.length > MIX_TOP ? `${all.length}위까지 보기` : '순위표로 가기';
+      body = items.length
+        ? `<ol class="minis">${items.map((r) => miniHtml(r, src)).join('')}</ol><a class="card-more" href="${esc(more)}">${link}</a>`
+        : msg(`${s.none}.`);
+    } else if (card.view === 'pending') {
+      body = msg(state.live ? '받아 오는 중입니다. 받는 즉시 나타납니다.' : `아직 받아 오지 못했습니다. 다음 수집 때 채워집니다(${everText()}마다).`);
+    } else if (card.view === 'none') body = msg('이 기간의 순위는 없습니다.');
+    else if (card.view === 'error') body = msg('불러오지 못했습니다. 5초마다 다시 시도합니다.');
+    else body = msg('불러오는 중입니다');
+    return `<section class="card" data-src="${src}" aria-label="${esc(mixName(src))}">
+      <header class="card-head">
+        <h2><a href="${esc(more)}" data-tip="${esc(mixName(src))} 순위표로 가기">${esc(s.name)} <span>${esc(s.sub || s.unit)}</span></a></h2>
+        <span class="card-unit">${esc(s.score)}</span>
+      </header>
+      ${body}
+    </section>`;
+  }
+
+  let multiHtml = '';
+  function renderMulti() {
+    let html;
+    if (!state.meta) {
+      html = `<p class="multi-msg">${state.view === 'offline' ? '데이터를 불러오지 못했습니다. 연결 상태를 확인하세요. 5초마다 다시 시도합니다.' : '불러오는 중입니다'}</p>`;
+    } else if (state.cat && !mixHave().length) {
+      html =
+        '<div class="multi-msg"><strong>이 분야의 순위가 없습니다</strong>이 사이트가 받지 않는 분야이거나 주소가 잘못됐습니다.' +
+        '<div><button class="btn" type="button" data-action="nocat">전체 순위 보기</button></div></div>';
+    } else if (!mixShown().length) {
+      html = '<p class="multi-msg">위에서 볼 곳을 하나 이상 켜세요.</p>';
+    } else {
+      html = mixShown().map(cardHtml).join('');
+    }
+    if (html === multiHtml) return; // 달라진 것이 없으면 다시 쓰지 않는다(읽던 자리와 말풍선이 그대로 있게)
+    multiHtml = html;
+    el.multi.innerHTML = html;
+  }
+
   function showEmpty(title, body, action) {
     el.rows.innerHTML = '';
     el.cols.hidden = true;
@@ -739,6 +1025,8 @@
         if (!state.live) showEmpty(`아직 받아 오지 못한 ${S().bucket}입니다`, `다음 수집 때 채워집니다(${everText()}마다).`);
         else if (S().pending) showEmpty(S().pending[0], S().pending[1]);
         else showEmpty('이 기간의 순위를 받아 오는 중입니다', `GitHub 검색 한도(분당 ${limit}회)에 맞춰 차례로 받고 있습니다. 받는 즉시 여기에 나타납니다.`);
+      } else if (state.view === 'invalid' && state.cat && !metaOf()) {
+        showEmpty('이 분야의 순위가 없습니다', `${S().name}에서 받지 않는 분야이거나 주소가 잘못됐습니다.`, { id: 'nocat', label: '전체 순위 보기' });
       } else if (state.view === 'invalid' && state.src === 'as') {
         showEmpty('없는 차트입니다', '주소가 잘못됐거나 이 사이트가 받지 않는 카테고리입니다.', { id: 'home', label: S().homeLabel });
       } else if (state.view === 'invalid' && !state.live) {
@@ -1115,6 +1403,14 @@
   }
 
   function renderAll(opts = {}) {
+    if (isMix()) {
+      // 모아 보기는 순위표·오른쪽 레일 대신 출처별 카드를 그린다.
+      renderNav();
+      renderSub();
+      renderMulti();
+      renderLive();
+      return;
+    }
     state.items = chartItems();
     renderSpam();
     renderNav();
@@ -1134,13 +1430,16 @@
     renderBoard();
   }
 
-  /** 다른 출처로 간다. 보던 종류·기간이 저쪽에도 있으면 그대로 가고, 없으면 저쪽의 기본 화면으로 간다. */
-  function switchTo(to) {
-    const m = metaOf(to);
+  /**
+   * 다른 출처나 다른 분야로 간다. 보던 종류·기간이 저쪽에도 있으면 그대로 가고, 없으면 저쪽의 기본 화면으로 간다
+   * (분야별 순위는 기간 목록이 더 짧다). 고른 분야는 저쪽에도 그 분야가 있을 때만 따라간다.
+   */
+  function switchTo(to, cat = state.cat) {
+    if (cat && (SOURCES[to].noCats || !hasCat(to, cat))) cat = '';
     const [homeType] = SOURCES[to].home;
     const type = SOURCES[to].types.some(([t]) => t === state.type) ? state.type : homeType;
-    const same = type === state.type && m && (m.types[type] || []).some((d) => d.key === state.key);
-    go(type, same ? state.key : firstKey(to, type), to);
+    const same = type === state.type && listOf(to, cat, type).some((d) => d.key === state.key);
+    go(type, same ? state.key : firstKey(to, type), to, cat);
   }
   el.sources.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-src]');
@@ -1151,6 +1450,29 @@
   el.subs.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-sub]');
     if (b && b.dataset.sub !== state.src) switchTo(b.dataset.sub);
+  });
+  el.cats.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cat]');
+    if (b && b.dataset.cat !== state.cat) switchTo(state.src, b.dataset.cat);
+  });
+  // 모아 보기: 나란히 볼 곳을 켜고 끈다. 고른 것은 이 브라우저에 기억해 둔다.
+  el.picks.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-pick]');
+    if (!b) return;
+    const src = b.dataset.pick;
+    if (!state.mixOff.delete(src)) state.mixOff.add(src);
+    try {
+      localStorage.setItem('mixOff', [...state.mixOff].join(','));
+    } catch {
+      /* 저장이 막혀 있어도 이번 화면에는 적용된다 */
+    }
+    renderNav(); // 켜 둔 출처에 따라 기간 목록이 달라질 수 있다
+    renderSub();
+    loadMulti();
+  });
+  el.multi.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-action="nocat"]');
+    if (b) switchTo(state.src, ''); // 없는 분야였다면 같은 기간의 전체 순위로
   });
   el.types.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-type]');
@@ -1198,8 +1520,9 @@
     if (!b) return;
     if (b.dataset.action === 'home') {
       const src = metaOf() ? state.src : 'gh'; // 이 사이트에 없는 출처였다면 GitHub으로
-      go(SOURCES[src].home[0], SOURCES[src].home[1], src);
+      go(SOURCES[src].home[0], SOURCES[src].home[1], src, metaOf() ? state.cat : '');
     }
+    if (b.dataset.action === 'nocat') switchTo(metaOf(state.src) ? state.src : 'gh', ''); // 없는 분야였다면 같은 기간의 전체 순위로
     if (b.dataset.action === 'showspam') setHideSpam(false);
     if (b.dataset.action === 'clear') {
       state.q = '';
@@ -1214,7 +1537,7 @@
   el.refreshBtn.addEventListener('click', async () => {
     let text;
     try {
-      const res = await fetch(`api/refresh?src=${state.src}&type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
+      const res = await fetch(`api/refresh?src=${encodeURIComponent(scopeOf())}&type=${state.type}&key=${encodeURIComponent(state.key)}`, { method: 'POST' });
       const body = await res.json();
       if (res.ok) text = '갱신을 요청했습니다';
       else if (body.reason === 'cooldown') {
@@ -1334,20 +1657,25 @@
 
   window.addEventListener('hashchange', () => {
     const before = state.src;
+    const beforeCat = state.cat;
     readHash();
-    if (state.src !== before) {
+    if (state.src !== before || state.cat !== beforeCat) {
       // 출처가 바뀌면 낱말(스타/좋아요, 언어/작업)이 달라지므로, 이전 출처의 순위를 새 머리글 아래에 남겨 두지 않는다.
-      state.lang = '';
-      state.age = 0;
+      // 분야가 바뀔 때도 마찬가지다(다른 분야의 순위를 새 분야 이름 아래에 두지 않는다). 다만 언어 같은 거르기는 그대로 둔다.
+      if (state.src !== before) {
+        state.lang = '';
+        state.age = 0;
+      }
       state.view = 'loading';
       state.data = null;
       state.dataId = '';
+      state.mix = new Map();
       applySource();
       renderAll();
     }
     renderNav();
     renderSub();
-    loadChart();
+    loadView();
   });
 
   // 1초마다 "N초 전", 남은 시간 같은 상대 시각만 새로 쓴다.
@@ -1369,6 +1697,12 @@
   } catch {
     /* 저장소를 못 읽으면 기본값(숨김)으로 둔다 */
   }
+  try {
+    // 모아 보기에서 꺼 둔 출처
+    for (const src of (localStorage.getItem('mixOff') || '').split(',')) if (MIX.includes(src)) state.mixOff.add(src);
+  } catch {
+    /* 저장소를 못 읽으면 모두 켠 채로 둔다 */
+  }
   readHash();
   applySource();
   renderAll();
@@ -1378,7 +1712,7 @@
     fetchMeta().then(
       (meta) => {
         applyMeta(meta);
-        loadChart();
+        loadView();
         if (state.live) {
           connect();
         } else {

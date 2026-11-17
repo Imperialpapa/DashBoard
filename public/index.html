@@ -62,13 +62,19 @@
     <section class="hero" aria-label="기간">
       <div class="source-row">
         <div class="sources" id="sources" role="group" aria-label="출처" hidden>
+          <!-- 모아 보기: 같은 기간·같은 분야의 순위를 출처마다 몇 개씩 나란히 본다. 기간으로 나누는 출처가 둘 이상일 때 보인다. -->
+          <button type="button" data-src="mix" aria-pressed="false" hidden>모아 보기</button>
           <button type="button" data-src="gh" aria-pressed="true">GitHub</button>
           <button type="button" data-src="hf" aria-pressed="false">Hugging Face</button>
           <button type="button" data-src="hn" aria-pressed="false">Hacker News</button>
           <button type="button" data-src="as" aria-pressed="false">App Store</button>
         </div>
         <div class="subs" id="subs" role="group" hidden></div>
+        <!-- 모아 보기에서 나란히 볼 곳을 고르는 단추(여럿을 켜고 끈다) -->
+        <div class="picks" id="picks" role="group" aria-label="모아 볼 곳" hidden></div>
       </div>
+      <!-- 분야(에이전트 AI, 로보틱스 …): 그 분야 것만 모은 순위로 바꾼다. 이 사이트에 분야별 순위가 있을 때 app.js가 채워 보여 준다. -->
+      <div class="cats" id="cats" role="group" aria-label="분야" hidden></div>
       <div class="types" role="group" aria-label="집계 단위">
         <button type="button" data-type="weekly" aria-pressed="true">주간</button>
         <button type="button" data-type="monthly" aria-pressed="false">월간</button>
@@ -88,6 +94,9 @@
       </div>
       <p class="period-sub" id="periodSub">&nbsp;</p>
     </section>
+
+    <!-- 모아 보기: 출처마다 카드 하나씩. 이때는 아래의 순위표와 오른쪽 레일을 쓰지 않는다. -->
+    <section class="multi" id="multi" aria-label="출처별 순위" hidden></section>
 
     <div class="toolbar">
       <div class="seg" role="group" aria-label="정렬 기준">

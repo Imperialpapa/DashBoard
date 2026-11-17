@@ -353,6 +353,94 @@ a {
   color: var(--ink);
 }
 
+/* 모아 보기에서 나란히 볼 곳을 고르는 단추: 여럿을 켜고 끄는 것이라 체크 상자를 앞에 둔다 */
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.picks button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.picks button::before {
+  content: "";
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.picks button:hover {
+  color: var(--ink);
+}
+
+.picks button[aria-pressed="true"] {
+  border-color: var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.picks button[aria-pressed="true"]::before {
+  content: "✓";
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* 분야 단추(전체 | 에이전트 AI | 로보틱스 …): 순위에 거는 조건이라 꼬리표 모양으로 두고, 고른 것만 채운다 */
+.cats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cats-label {
+  margin-right: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cats button {
+  padding: 3px 12px 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.cats button:hover {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.cats button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
 .types {
   display: flex;
   gap: 22px;
@@ -911,6 +999,171 @@ a {
   from {
     opacity: 0;
   }
+}
+
+/* ── 모아 보기 ────────────────────────────────────────── */
+/* 출처마다 카드 하나씩, 같은 기간·같은 분야의 상위 몇 개를 나란히 둔다. 순위표용 도구와 오른쪽 레일은 쓰지 않는다. */
+:root[data-src="mix"] .toolbar,
+:root[data-src="mix"] .layout {
+  display: none;
+}
+
+.multi {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.card-head h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card-head h2 a {
+  text-decoration: none;
+}
+
+.card-head h2 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.card-head h2 span {
+  color: var(--ink-2);
+}
+
+.card-unit {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.mini {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 8px 16px 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mini:hover {
+  background: var(--wash);
+}
+
+.mini-rank {
+  font: 800 24px/1 var(--font-num);
+  color: var(--ink-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini[data-top] .mini-rank {
+  font-size: 30px;
+  color: var(--ink);
+}
+
+.mini-main {
+  min-width: 0;
+}
+
+.mini .name {
+  font-size: 14.5px;
+}
+
+/* 글 제목(Hacker News)은 문장이라 두 줄까지 보여 준다(순위표와 같다) */
+.card[data-src="hn"] .name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+
+.mini-note {
+  display: flex;
+  gap: 0 10px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-note > * {
+  flex: none;
+}
+
+.mini-note .mini-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-score {
+  font-size: 14.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-more {
+  display: block;
+  padding: 9px 16px 11px;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.card-more::after {
+  content: " →";
+}
+
+.card-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.card-msg {
+  padding: 30px 16px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.multi-msg {
+  grid-column: 1 / -1;
+  padding: 56px 24px;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.multi-msg strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.multi-msg .btn {
+  margin-top: 14px;
 }
 
 /* ── 오른쪽 레일 ──────────────────────────────────────── */
