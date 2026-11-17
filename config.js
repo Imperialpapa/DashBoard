@@ -109,7 +109,12 @@ module.exports = {
     // Hugging Face에서 태그(이름) 하나를 훑는 쪽 수 상한(한 쪽에 1,000개). 여기까지 가도 남은 것이 있으면 좋아요가 많은 쪽만 순위에 넣는다.
     // 대부분의 태그는 몇 쪽이면 끝나고, 아주 큰 태그(text-generation 등)만 여기까지 간다: 20쪽이면 좋아요 4~5개까지 내려가고 10초쯤 걸린다.
     hfPages: 20,
-    // 분야 목록. 적힌 순서대로 화면에 나온다. 어떤 것이 그 분야에 드는지는 출처마다 낱말로 적는다(적지 않은 출처에는 그 분야가 없다).
+    // 분야를 몇 개까지 둘지. 화면에서 등록할 때(GitHub 이슈) 이 수를 넘으면 받지 않는다: 분야마다 받아 올 것이 늘어나
+    // 한 번의 빌드(static.budget)에 다 받지 못하게 되기 때문이다.
+    max: 12,
+    // 분야 목록은 categories.json에 있다. 사람이 고쳐도 되고, 화면에서 "정식 분야로 등록"을 누르면 GitHub 이슈를 거쳐
+    // 워크플로(.github/workflows/category.yml)가 그 파일을 고친다. 적힌 순서대로 화면에 나온다.
+    // 어떤 것이 그 분야에 드는지는 출처마다 낱말로 적는다(적지 않은 출처에는 그 분야가 없다).
     //   id      화면 주소(#weekly/rolling/robotics)와 폴더 이름(data/gh_robotics/)에 들어간다. 영문 소문자·숫자·-
     //   label   화면에 보일 이름
     //   github  이름·설명·토픽에 이 낱말 가운데 하나라도 든 저장소(6개까지. 띄어 쓴 낱말은 그 구절)
@@ -117,43 +122,7 @@ module.exports = {
     //           search: 이름에 이 글자가 든 것
     //   hn      제목에 이 낱말로 시작하는 낱말이 든 글(agent → agent, agents, agentic. 띄어 쓴 낱말은 그 구절)
     // 낱말로 고르는 것이라 다른 뜻으로 쓰인 것이 섞이거나 그 낱말을 쓰지 않은 것이 빠질 수 있다. 낱말을 바꿔 가며 다듬는다.
-    list: [
-      {
-        id: 'agents',
-        label: '에이전트 AI',
-        github: ['agent', 'agents', 'agentic', 'mcp'],
-        hf: { tags: ['agent', 'agents'], search: ['agent'] },
-        hn: ['agent', 'mcp'],
-      },
-      {
-        id: 'robotics',
-        label: '로보틱스',
-        github: ['robot', 'robots', 'robotics', 'ros2', 'humanoid', 'embodied'],
-        hf: { tags: ['robotics', 'task_categories:robotics'], search: ['robot'] },
-        hn: ['robot', 'humanoid'],
-      },
-      {
-        id: 'llm',
-        label: 'LLM',
-        github: ['llm', 'llms', 'gpt', 'chatgpt', 'language model'],
-        hf: { tags: ['text-generation', 'task_categories:text-generation'], search: ['llm'] },
-        hn: ['llm', 'gpt', 'chatgpt', 'claude', 'gemini', 'llama'],
-      },
-      {
-        id: 'genmedia',
-        label: '이미지·영상 생성',
-        github: ['diffusion', 'text-to-image', 'text-to-video', 'image generation', 'video generation', 'comfyui'],
-        hf: { tags: ['text-to-image', 'text-to-video', 'image-to-video', 'task_categories:text-to-image', 'task_categories:text-to-video'], search: ['diffusion'] },
-        hn: ['diffusion', 'image generation', 'video generation', 'midjourney'],
-      },
-      {
-        id: 'speech',
-        label: '음성',
-        github: ['tts', 'speech', 'voice', 'asr'],
-        hf: { tags: ['text-to-speech', 'automatic-speech-recognition', 'task_categories:text-to-speech', 'task_categories:automatic-speech-recognition'], search: ['tts'] },
-        hn: ['tts', 'speech', 'voice'],
-      },
-    ],
+    list: require('./categories.json'),
   },
 
   // 정적 사이트 빌드(lib/build.js, GitHub Actions + Pages)용.

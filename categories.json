@@ -1,0 +1,37 @@
+[
+  {
+    "id": "agents",
+    "label": "에이전트 AI",
+    "github": ["agent", "agents", "agentic", "mcp"],
+    "hf": { "tags": ["agent", "agents"], "search": ["agent"] },
+    "hn": ["agent", "mcp"]
+  },
+  {
+    "id": "robotics",
+    "label": "로보틱스",
+    "github": ["robot", "robots", "robotics", "ros2", "humanoid", "embodied"],
+    "hf": { "tags": ["robotics", "task_categories:robotics"], "search": ["robot"] },
+    "hn": ["robot", "humanoid"]
+  },
+  {
+    "id": "llm",
+    "label": "LLM",
+    "github": ["llm", "llms", "gpt", "chatgpt", "language model"],
+    "hf": { "tags": ["text-generation", "task_categories:text-generation"], "search": ["llm"] },
+    "hn": ["llm", "gpt", "chatgpt", "claude", "gemini", "llama"]
+  },
+  {
+    "id": "genmedia",
+    "label": "이미지·영상 생성",
+    "github": ["diffusion", "text-to-image", "text-to-video", "image generation", "video generation", "comfyui"],
+    "hf": { "tags": ["text-to-image", "text-to-video", "image-to-video", "task_categories:text-to-image", "task_categories:text-to-video"], "search": ["diffusion"] },
+    "hn": ["diffusion", "image generation", "video generation", "midjourney"]
+  },
+  {
+    "id": "speech",
+    "label": "음성",
+    "github": ["tts", "speech", "voice", "asr"],
+    "hf": { "tags": ["text-to-speech", "automatic-speech-recognition", "task_categories:text-to-speech", "task_categories:automatic-speech-recognition"], "search": ["tts"] },
+    "hn": ["tts", "speech", "voice"]
+  }
+]

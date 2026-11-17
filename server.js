@@ -10,12 +10,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const registry = require('./lib/sources');
+const categories = require('./lib/categories');
 
 const PUBLIC = path.join(__dirname, 'public');
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/live.js': ['live.js', 'text/javascript; charset=utf-8'], // 분야를 화면에서 더할 때 브라우저가 바로 검색하는 부분
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
   // 홈 화면에 추가: 이름·아이콘 목록과 아이콘들
@@ -52,7 +54,8 @@ function createApp({ store, collector, extra = {} }) {
 
   // GitHub 것은 바로 아래에, 나머지 출처는 그 이름 아래에 싣는다(정적 사이트의 meta.json과 같은 모양).
   const meta = () => {
-    const m = { ...collector.meta(), live: true };
+    // 분야 목록과 낱말도 싣는다(화면에서 분야를 더하고 고치는 데 쓴다). 등록할 저장소(repo)는 배포본에만 있다.
+    const m = { ...collector.meta(), live: true, ...categories.publicInfo(collector.cfg) };
     for (const [src, s] of Object.entries(sources)) if (src !== 'gh') m[src] = s.collector.meta();
     return m;
   };

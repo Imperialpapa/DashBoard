@@ -1,0 +1,90 @@
+# 화면에서 "정식 분야로 등록"을 누르면 그 분야를 적은 이슈가 올라온다. 그 이슈를 읽어 categories.json을 고치고,
+# 커밋한 뒤 배포(pages.yml)를 돌린다. 이슈에는 결과를 답글로 달고 닫는다.
+name: Category from issue
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write # categories.json을 커밋한다
+  issues: write # 답글을 달고 닫는다
+  actions: write # 배포 워크플로를 돌린다
+
+jobs:
+  apply:
+    # 저장소 주인이 올린, 제목이 "[분야]"로 시작하는 이슈만 처리한다. 다른 사람이 올린 것은 아무 일도 하지 않는다.
+    if: github.event.issue.author_association == 'OWNER' && startsWith(github.event.issue.title, '[분야]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # 이슈 본문은 환경 변수로만 넘긴다(명령 줄에 끼워 넣지 않는다). 읽는 쪽(scripts/category.js)이 모양과 글자를 확인한다.
+      # 이슈가 잇달아 올라와 그사이 다른 커밋이 들어갔으면 최신 것에서 다시 반영해 올린다.
+      - name: Apply to categories.json and push
+        id: apply
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          OUT="$RUNNER_TEMP/category"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          pushed=false
+          for try in 1 2 3; do
+            git fetch --quiet origin "$BRANCH"
+            git reset --quiet --hard "origin/$BRANCH"
+            node scripts/category.js "$OUT"
+            if [ "$(cat "$OUT/changed")" != "true" ]; then
+              pushed=none
+              break
+            fi
+            git add categories.json
+            git commit --quiet -F "$OUT/commit.txt"
+            if git push --quiet origin "HEAD:$BRANCH"; then
+              pushed=true
+              break
+            fi
+            sleep $((try * 5))
+          done
+          if [ "$pushed" = "false" ]; then
+            echo "categories.json을 올리지 못했습니다" >&2
+            exit 1
+          fi
+          echo "changed=$(cat "$OUT/changed")" >> "$GITHUB_OUTPUT"
+          echo "ok=$(cat "$OUT/ok")" >> "$GITHUB_OUTPUT"
+
+      # 워크플로가 올린 커밋은 push 이벤트를 일으키지 않으므로 배포를 직접 돌린다.
+      - name: Start a deploy
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+
+      - name: Reply and close
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          DONE: ${{ job.status == 'success' }}
+          OK: ${{ steps.apply.outputs.ok }}
+        run: |
+          OUT="$RUNNER_TEMP/category"
+          if [ "$DONE" = "true" ] && [ -f "$OUT/comment.md" ]; then
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$OUT/comment.md"
+            if [ "$OK" = "true" ]; then
+              gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY"
+            else
+              gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason "not planned"
+            fi
+          else
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "반영하다가 실패했습니다. 실행 기록: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

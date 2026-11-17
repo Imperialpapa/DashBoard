@@ -1746,6 +1746,14 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.match(pageHtml, /<div class="picks" id="picks" role="group" aria-label="모아 볼 곳" hidden><\/div>/);
     assert.match(pageHtml, /<section class="multi" id="multi" aria-label="출처별 순위" hidden><\/section>/);
     assert.match(await (await fetch(`${base}/app.js`)).text(), /SOURCES\.mix = \{/);
+    // 분야를 화면에서 더하기: 목록에 분야의 낱말과 상한이 실리고(등록할 저장소는 배포본에만 있다), 바로 검색하는 부분(live.js)을 내준다.
+    assert.deepEqual([liveMeta.cats.map((c) => c.id), liveMeta.cats[0].hf, liveMeta.catMax, liveMeta.repo], [['robotics', 'agents'], { tags: ['robotics'], search: ['robot'] }, 12, undefined]);
+    const liveJs = await fetch(`${base}/live.js`);
+    assert.deepEqual([liveJs.status, liveJs.headers.get('content-type')], [200, 'text/javascript; charset=utf-8']);
+    assert.match(await liveJs.text(), /BestLive/);
+    assert.match(pageHtml, /<script src="live\.js" defer><\/script>\s*<script src="app\.js" defer><\/script>/); // live.js가 먼저
+    assert.match(pageHtml, /<form class="cat-form" id="catForm" novalidate autocomplete="off" hidden>/);
+    assert.match(pageHtml, /<div class="cat-bar" id="catBar" hidden><\/div>/);
     close();
     server.closeAllConnections();
 
@@ -1770,6 +1778,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     }
     assert.equal(fs.existsSync(path.join(out1, 'data/hf_agents')), false); // 그 출처의 낱말을 적지 않은 분야는 만들지 않는다
     const meta1 = JSON.parse(fs.readFileSync(path.join(out1, 'data/meta.json'), 'utf8'));
+    // 분야의 낱말과 상한도 목록에 실린다(화면에서 분야를 더하고 고치는 데 쓴다). 저장소를 알려 주지 않았으면 repo는 없다.
+    assert.deepEqual([meta1.cats.map((c) => c.id), meta1.cats[1].github, meta1.catMax, 'repo' in meta1], [['robotics', 'agents'], ['agent'], 12, false]);
     // 화면은 목록에 실린 순서대로 분야를 늘어놓는다: 로보틱스, 에이전트.
     assert.deepEqual(Object.keys(meta1).filter((k) => k.includes('_')), ['gh_robotics', 'hf_robotics', 'hfd_robotics', 'hn_robotics', 'gh_agents']);
     assert.deepEqual([meta1.gh_agents.category, meta1.hfd_robotics.category.terms, meta1.category, meta1.hf.category], [{ id: 'agents', label: '에이전트', terms: ['agent'] }, ['robot'], undefined, undefined]);
@@ -1795,7 +1805,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     };
     gh.bump = 9;
     const out2 = path.join(TMP, 'siteC2');
-    const b2 = await build({ cfg: cfgC('buildC2'), out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api, fetchImpl: served(out1), ...quiet });
+    const b2 = await build({ cfg: cfgC('buildC2'), out: out2, seedUrl: 'https://example.test/site/', search: ghSearch, api, fetchImpl: served(out1), repo: 'someone/best', ...quiet });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(out2, 'data/meta.json'), 'utf8')).repo, 'someone/best'); // 화면이 "정식 분야로 등록"할 곳
     assert.deepEqual([b2.loaded, b2.gh_robotics.loaded, b2.gh_agents.loaded, b2.hf_robotics.loaded, b2.hn_robotics.loaded], [6, 6, 6, 6, 6]);
     const chart2 = JSON.parse(fs.readFileSync(path.join(out2, 'data/gh_robotics/weekly.rolling.json'), 'utf8'));
     assert.deepEqual([chart2.version, chart2.items[0].stars, chart2.items[0].gain, chart2.items[0].move], [2, 3009, 9, 0]);
@@ -1806,6 +1817,216 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const meta3 = JSON.parse(fs.readFileSync(path.join(out3, 'data/meta.json'), 'utf8'));
     assert.deepEqual([b3.gh_robotics, b3.gh_agents.loaded, meta3.gh_robotics, Boolean(meta3.gh_agents), fs.existsSync(path.join(out3, 'data/gh_robotics'))], [undefined, 6, undefined, true, false]);
     ok('분야별 순위: 설정 검증, GitHub 질의와 한도 나눠 쓰기, Hugging Face 조건 합치기, Hacker News 낱말 합치기, 잠깐의 실패 다시 받기, 서버 주소, 빌드와 이어받기');
+  }
+
+  // ── 22. 화면에서 분야 더하기: 적는 규칙, 브라우저의 바로 검색, 이슈로 등록 ──
+  {
+    const live = require(path.join(root, 'public/live.js')); // 화면·시험·등록 스크립트가 함께 쓴다
+    const categories = require(path.join(root, 'lib/categories'));
+    const category = require(path.join(root, 'scripts/category'));
+    const spam = require(path.join(root, 'lib/spam'));
+    const hnLib = require(path.join(root, 'lib/hn'));
+    const hfLib = require(path.join(root, 'lib/hf'));
+
+    // ── 적는 규칙 ──
+    assert.deepEqual(live.words(' humanoid ,, Biped   robot\nHUMANOID，x、y '), ['humanoid', 'Biped robot', 'x', 'y']);
+    const hum = live.fromWords(' 휴머노이드 ', 'humanoid, biped robot');
+    assert.deepEqual(hum, { id: '', label: '휴머노이드', github: ['humanoid', 'biped robot'], hf: { tags: ['humanoid'], search: ['humanoid', 'biped robot'] }, hn: ['humanoid', 'biped robot'] });
+    assert.deepEqual([live.simple(hum), live.simple({ ...hum, hn: [] })], [['humanoid', 'biped robot'], null]); // 낱말 한 벌 / 출처마다 다르게
+    assert.deepEqual(
+      [live.newId(hum), live.newId(hum, ['humanoid']), live.newId(hum, ['humanoid', 'humanoid-2']), live.newId(live.fromWords('음성', '음성')), live.newId(live.fromWords('x', '3D printing'))],
+      ['humanoid', 'humanoid-2', 'humanoid-3', 'topic', 'd-printing'],
+    );
+    const good = live.spec({ ...hum, id: 'humanoid' });
+    assert.deepEqual(good, { ...hum, id: 'humanoid' });
+    const rejects = (c, re) => assert.throws(() => live.spec({ ...good, ...c }), re);
+    rejects({ id: 'Humanoid' }, /id는/);
+    rejects({ id: '' }, /id는/);
+    rejects({ label: ' ' }, /이름을 적어/);
+    rejects({ label: 'x'.repeat(31) }, /30자까지/);
+    rejects({ label: '<b>x</b>' }, /쓸 수 없는 글자/);
+    rejects({ github: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, /GitHub 낱말은 6개까지/);
+    rejects({ github: ['robot stars:>5'] }, /낱말에는/); // 검색 한정자가 될 글자
+    rejects({ hn: ['"quoted"'] }, /낱말에는/);
+    rejects({ hf: { tags: ['two words'], search: [] } }, /태그는 띄어 쓰지 않고/);
+    rejects({ github: ['x'.repeat(61)] }, /60자까지/);
+    rejects({ github: Array.from({ length: 6 }, (_, i) => `${'long word '.repeat(4)}${i}`) }, /너무 깁니다/);
+    rejects({ github: [], hn: [], hf: {} }, /하나 이상/);
+    // 저장소에 적혀 있는 분야는 모두 이 규칙을 지나고, 다듬어도 그대로다(화면에서 고쳤다 되돌리면 "같다"로 본다).
+    const fileText = fs.readFileSync(path.join(root, 'categories.json'), 'utf8').replace(/\r\n/g, '\n');
+    const fileList = JSON.parse(fileText);
+    assert.ok(fileList.length >= 1 && fileList.length <= categories.settings(fullCfg).max);
+    for (const c of fileList) assert.deepEqual(live.spec(c), categories.all({ categories: { list: [c] } })[0]);
+    assert.equal(category.format(fileList), fileText); // 등록 스크립트가 쓰는 모양 그대로
+    assert.deepEqual(fullCfg.categories.list, fileList);
+
+    // ── 서버 쪽 코드와 같은 규칙인지 ──
+    assert.equal(live.githubQuery(good.github), categories.githubQuery(good.github));
+    assert.equal(String(live.ID), String(categories.ID));
+    const rule = { minStars: 100, maxForkRatio: 0.01, since: '2020-01-01' };
+    const sample = Array.from({ length: 12 }, (_, i) => ({ id: i, stars: 1000 - i * 50, forks: i % 3 === 0 ? 0 : 300, created: '2026-01-02T00:00:00Z' }));
+    assert.deepEqual(live.rankAll(sample, rule, 5), spam.rankAll(sample, rule, 5));
+    assert.deepEqual([live.countSkipped(sample, rule, 5), sample.map((r) => live.isSpam(r, rule))], [spam.countSkipped(sample, rule, 5), sample.map((r) => spam.isSpam(r, rule))]);
+    assert.deepEqual(live.merge([sample.slice(0, 3), sample.slice(2, 6).reverse()]), spam.merge(sample.slice(0, 3), sample.slice(2, 6).reverse()));
+    const hit = { objectID: 77, title: 'Humanoid walks', url: 'https://www.example.com/a?b=1', author: 'pg', points: 12, num_comments: 3, created_at_i: 1_767_312_000 };
+    assert.deepEqual([live.slim.hn(hit), live.slim.hn({ ...hit, url: null })], [hnLib.slim(hit), hnLib.slim({ ...hit, url: null })]);
+    const hfRaw = { _id: 'x1', id: 'org/name', likes: 5, downloads: 9, pipeline_tag: 'robotics', library_name: 'lerobot', sdk: 'gradio', tags: ['license:mit', 'modality:video'], createdAt: '2026-01-02T00:00:00.000Z' };
+    assert.deepEqual([live.slim.hf.models(hfRaw), live.slim.hf.spaces(hfRaw), live.slim.hf.datasets(hfRaw)], [hfLib.slim(hfRaw), hfLib.slimSpace(hfRaw), hfLib.slimDataset(hfRaw)]);
+    // Hacker News 검색 주소: 수집기가 부르는 주소와 글자 하나까지 같다(수집기의 fetch만 잠깐 가로채 주소를 본다).
+    const realFetch = global.fetch;
+    const urls = [];
+    global.fetch = async (url) => {
+      urls.push(String(url));
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ hits: [], nbHits: 0, exhaustiveNbHits: true }) };
+    };
+    try {
+      await hnLib.searchStories({ from: '2026-01-01', to: '2026-01-07', query: 'biped robot', limit: 100 });
+      await hnLib.searchStories({ from: '2026-01-01', query: 'humanoid', limit: 100 });
+    } finally {
+      global.fetch = realFetch;
+    }
+    assert.deepEqual([live.hnUrl({ from: '2026-01-01', to: '2026-01-07', query: 'biped robot' }), live.hnUrl({ from: '2026-01-01', query: 'humanoid' })], urls);
+
+    // ── 바로 검색: GitHub ──
+    const res = (body, { status = 200, headers = {} } = {}) => ({ ok: status >= 200 && status < 300, status, headers: { get: (n) => (n.toLowerCase() in headers ? String(headers[n.toLowerCase()]) : null) }, json: async () => body });
+    const repo = (i, stars, forks) => ({
+      id: i, full_name: `o/r${i}`, owner: { login: 'o', avatar_url: 'https://a/o' }, html_url: `https://github.com/o/r${i}`, description: null, language: 'Go',
+      stargazers_count: stars, forks_count: forks, created_at: '2026-01-03T00:00:00Z', pushed_at: '2026-01-04T00:00:00Z',
+    });
+    const rate = (remaining) => ({ 'x-ratelimit-limit': 10, 'x-ratelimit-remaining': remaining, 'x-ratelimit-reset': 1_800_000_000 });
+    const page1 = Array.from({ length: 100 }, (_, i) => repo(i, 2000 - i, i < 5 ? 0 : 500)); // 맨 위 다섯은 스팸 의심
+    const page2 = Array.from({ length: 50 }, (_, i) => repo(100 + i, 900 - i, 500));
+    let calls = [];
+    const ghOk = async (url, opt) => {
+      calls.push([url, opt.headers.Accept]);
+      const p = Number(new URL(url).searchParams.get('page'));
+      return res({ total_count: 150, incomplete_results: false, items: p === 1 ? page1 : page2 }, { headers: rate(10 - p) });
+    };
+    const when = { from: '2026-01-01', to: '2026-01-07' };
+    const g = await live.github({ terms: good.github, ...when, top: 100, spam: rule, fetch: ghOk, now: 5000 });
+    assert.equal(calls.length, 2); // 스팸 의심을 빼면 100개가 안 차서 둘째 쪽까지 받았다
+    const q0 = new URL(calls[0][0]);
+    assert.deepEqual(
+      [q0.origin + q0.pathname, q0.searchParams.get('q'), q0.searchParams.get('sort'), q0.searchParams.get('per_page'), new URL(calls[1][0]).searchParams.get('page'), calls[0][1]],
+      ['https://api.github.com/search/repositories', 'humanoid OR "biped robot" in:name,description,topics created:2026-01-01..2026-01-07', 'stars', '100', '2', 'application/vnd.github+json'],
+    );
+    assert.deepEqual(
+      [g.live, g.version, g.from, g.to, g.total, g.short, g.incomplete, g.skipped, g.items.length, g.dataAt, g.rate, g.query],
+      [true, 1, '2026-01-01', '2026-01-07', 150, false, false, 5, 105, 5000, { limit: 10, remaining: 8, reset: 1_800_000_000 }, q0.searchParams.get('q')],
+    );
+    assert.deepEqual([g.items[0].spam, g.items[0].crank, g.items[5].rank, g.items[5].crank, g.items[104].crank, g.items[5].gain, g.items[5].move, g.items[5].desc], [true, null, 6, 1, 100, null, null, '']);
+    // 지금까지인 기간(to 없음)과, 스팸 기준이 없을 때: 한 쪽으로 끝난다.
+    calls = [];
+    const g2 = await live.github({ terms: ['x'], from: '2026-01-01', top: 100, fetch: ghOk });
+    assert.deepEqual([calls.length, g2.query, g2.items.length, g2.to, g2.skipped], [1, 'x in:name,description,topics created:>=2026-01-01', 100, null, 0]);
+    // 한도: 첫 쪽에서 걸리면 언제 풀리는지 알려 던지고, 둘째 쪽에서 걸리면 받은 데까지만 돌려준다.
+    const limited = async () => res({ message: 'API rate limit exceeded' }, { status: 403, headers: rate(0) });
+    await assert.rejects(live.github({ terms: ['x'], ...when, fetch: limited }), (e) => e instanceof live.LiveError && /한도\(분당 10회\)/.test(e.message) && e.retryAt === 1_800_000_000_000 && e.status === 403);
+    await assert.rejects(live.github({ terms: ['x'], ...when, now: 1000, fetch: async () => res({}, { status: 429, headers: { 'retry-after': 30 } }) }), (e) => e.retryAt === 31_000);
+    const g3 = await live.github({ terms: ['x'], ...when, spam: rule, fetch: async (url, opt) => (/page=1$/.test(url) ? ghOk(url, opt) : limited()) });
+    assert.deepEqual([g3.short, g3.items.length, g3.items.filter((r) => !r.spam).length], [true, 100, 95]);
+    await assert.rejects(live.github({ terms: ['x'], ...when, fetch: async () => res({ message: 'Validation Failed' }, { status: 422, headers: rate(5) }) }), /GitHub 검색이 실패했습니다 \(Validation Failed\)/);
+    await assert.rejects(live.github({ terms: ['x'], ...when, fetch: async () => { throw new TypeError('Failed to fetch'); } }), /GitHub에 연결하지 못했습니다/);
+
+    // ── 바로 검색: Hacker News(낱말마다 받아 합친다) ──
+    const story = (id, points) => ({ objectID: id, title: `t${id}`, url: `https://example.com/${id}`, author: 'u', points, num_comments: 1, created_at_i: 1_767_312_000 });
+    const hnSeen = [];
+    const hnOk = async (url) => {
+      const query = new URL(url).searchParams.get('query');
+      hnSeen.push(query);
+      return res({ hits: query === 'humanoid' ? [story('1', 50), story('2', 10), { objectID: '9' }] : [story('2', 10), story('3', 70)], nbHits: 2, exhaustiveNbHits: true });
+    };
+    const h = await live.hn({ terms: ['humanoid', 'biped robot'], ...when, fetch: hnOk, now: 7 });
+    assert.deepEqual([hnSeen, h.items.map((r) => [r.id, r.rank, r.stars]), h.total, h.live, h.items[0].gain], [['humanoid', '"biped robot"'], [['3', 1, 70], ['1', 2, 50], ['2', 3, 10]], null, true, null]);
+    assert.equal((await live.hn({ terms: ['humanoid'], ...when, fetch: hnOk })).total, 2); // 낱말이 하나면 개수를 안다
+    await assert.rejects(live.hn({ terms: ['x'], ...when, now: 0, fetch: async () => res({}, { status: 429 }) }), (e) => /HTTP 429/.test(e.message) && e.retryAt === 60_000);
+    await assert.rejects(live.hn({ terms: ['x'], ...when, fetch: async () => res({ nope: 1 }) }), /응답 형식/);
+
+    // ── 바로 검색: Hugging Face(조건마다 좋아요순으로 훑어 합친 뒤 기간으로 고른다) ──
+    const model = (id, likes, day) => ({ _id: id, id: `org/${id}`, likes, downloads: 1, pipeline_tag: 'robotics', tags: [], createdAt: `${day}T00:00:00.000Z` });
+    const next = (cursor, cond) => ({ link: `<https://huggingface.co/api/models?cursor=${cursor}&${cond}>; rel="next"` });
+    const hfSeen = [];
+    const hfOk = async (url) => {
+      const u = new URL(url);
+      hfSeen.push(u.search);
+      if (u.searchParams.get('filter') === 'robotics' && !u.searchParams.get('cursor')) return res([model('a', 9, '2026-01-02'), model('b', 7, '2026-01-03')], { headers: next('X', 'filter=robotics') });
+      if (u.searchParams.get('cursor') === 'X') return res([model('c', 5, '2026-01-05'), model('d', 4, '2026-01-06')], { headers: next('Y', 'filter=robotics') });
+      if (u.searchParams.get('search') === 'humanoid') return res([model('b', 7, '2026-01-03'), model('e', 6, '2025-12-01'), { id: 'no/date', likes: 99 }]);
+      throw new Error(`시험에 없는 주소: ${url}`);
+    };
+    const sweep = await live.hfSweep({ kind: 'models', tags: ['robotics'], search: ['humanoid'], pages: 2, pageSize: 2, retryWait: 0, fetch: hfOk });
+    assert.deepEqual(hfSeen, ['?sort=likes&direction=-1&limit=2&filter=robotics', '?cursor=X&filter=robotics', '?sort=likes&direction=-1&limit=2&search=humanoid']);
+    // 태그 조건은 두 쪽에서 멈췄다: 좋아요 4개인 것은 다 봤는지 모르므로 5개 이상인 것만 남긴다.
+    assert.deepEqual([sweep.pool.map((m) => [m.name, m.stars]), sweep.cut, sweep.pages], [[['org/a', 9], ['org/b', 7], ['org/e', 6], ['org/c', 5]], 5, 3]);
+    const hb = live.hfBucket(sweep, { ...when, top: 100, now: 9 });
+    assert.deepEqual([hb.items.map((m) => [m.name, m.rank]), hb.cut, hb.live, hb.dataAt, hb.total], [[['org/a', 1], ['org/b', 2], ['org/c', 3]], 5, true, 9, null]); // 기간 밖(e)은 빠진다
+    const one = live.hfBucket(sweep, { from: '2026-01-03', top: 1 });
+    assert.deepEqual([one.items.map((m) => m.name), 'cut' in one, one.to], [['org/b'], false, null]); // 다 찼으면 어디까지 훑었는지는 적지 않는다
+    let dsUrl = '';
+    await live.hfSweep({ kind: 'datasets', tags: ['t'], retryWait: 0, fetch: async (url) => ((dsUrl = url), res([])) });
+    assert.equal(dsUrl, 'https://huggingface.co/api/datasets?sort=likes&direction=-1&limit=1000&expand[]=likes&expand[]=createdAt&expand[]=downloads&expand[]=tags&filter=t');
+    // 처음 부를 때의 잠깐의 거절은 한 번 더 받아 보고, 한도 초과는 그대로 던진다.
+    let tries = 0;
+    const flaky = await live.hfSweep({ kind: 'spaces', search: ['x'], retryWait: 0, fetch: async () => ((tries += 1) === 1 ? res({ error: 'slow' }, { status: 500 }) : res([{ ...model('s', 3, '2026-01-02'), sdk: 'gradio' }])) });
+    assert.deepEqual([tries, flaky.pool.map((m) => [m.url, m.lang])], [2, [['https://huggingface.co/spaces/org/s', 'gradio']]]);
+    await assert.rejects(live.hfSweep({ kind: 'models', search: ['x'], retryWait: 0, now: 0, fetch: async () => res({}, { status: 429, headers: { 'retry-after': 5 } }) }), (e) => /한도/.test(e.message) && e.retryAt === 5000);
+    await assert.rejects(live.hfSweep({ kind: 'nope', search: ['x'] }), /모르는 종류/);
+
+    // ── 정식 분야로 등록: 이슈 주소 → 본문 → 할 일 ──
+    const link = live.issueUrl('someone/best', 'set', good);
+    const linkUrl = new URL(link);
+    assert.deepEqual([linkUrl.origin + linkUrl.pathname, linkUrl.searchParams.get('title')], ['https://github.com/someone/best/issues/new', '[분야] 더하기: 휴머노이드']);
+    assert.ok(linkUrl.searchParams.get('title').startsWith(live.ISSUE_MARK));
+    assert.ok(link.length < 2000); // 주소가 너무 길면 GitHub가 받지 않는다
+    assert.deepEqual(live.parseIssue(linkUrl.searchParams.get('body')), { action: 'set', category: good });
+    const rmUrl = new URL(live.issueUrl('someone/best', 'remove', good));
+    assert.deepEqual([rmUrl.searchParams.get('title'), live.parseIssue(rmUrl.searchParams.get('body'))], ['[분야] 지우기: 휴머노이드', { action: 'remove', id: 'humanoid' }]);
+    assert.deepEqual([live.issueUrl('', 'set', good), live.issueUrl('not a repo', 'set', good), live.issueUrl('a/b/c', 'set', good)], ['', '', '']);
+    const fence = (obj) => `안내\n\n\`\`\`json\n${typeof obj === 'string' ? obj : JSON.stringify(obj)}\n\`\`\`\n`;
+    assert.throws(() => live.parseIssue('그냥 글'), /json 덩이가 없습니다/);
+    assert.throws(() => live.parseIssue(fence('{ nope')), /읽을 수 없습니다/);
+    assert.throws(() => live.parseIssue(fence({ action: 'drop', id: 'x' })), /set이나 remove/);
+    assert.throws(() => live.parseIssue(fence({ action: 'remove', id: '../x' })), /지울 분야의 id/);
+    assert.throws(() => live.parseIssue(fence({ action: 'set', category: { ...good, github: ['x stars:>1'] } })), /낱말에는/);
+    assert.throws(() => live.parseIssue('x'.repeat(20_001)), /너무 깁니다/);
+
+    // ── 이슈를 categories.json에 반영(scripts/category.js) ──
+    const before = [{ id: 'robotics', label: '로보틱스', github: ['robot'], hf: { tags: ['robotics'], search: [] }, hn: ['robot'] }];
+    const added = category.apply({ body: linkUrl.searchParams.get('body'), list: before, max: 3 });
+    assert.deepEqual([added.ok, added.changed, added.list.map((c) => c.id), added.commit.split('\n')[0]], [true, true, ['robotics', 'humanoid'], '분야 더하기: 휴머노이드 (humanoid)']);
+    assert.match(added.comment, /「휴머노이드」 분야를 더했습니다/);
+    assert.equal(before.length, 1); // 넘겨받은 목록은 건드리지 않는다
+    const again = category.apply({ body: linkUrl.searchParams.get('body'), list: added.list, max: 3 });
+    assert.deepEqual([again.ok, again.changed, again.commit], [true, false, '']); // 같은 내용이면 바꾸지 않는다
+    const edited = category.apply({ body: fence({ action: 'set', category: { ...good, label: '휴머노이드 로봇', hn: ['humanoid'] } }), list: added.list, max: 3 });
+    assert.deepEqual([edited.changed, edited.list[1].label, edited.list[1].hn, edited.list.length, edited.commit.split('\n')[0]], [true, '휴머노이드 로봇', ['humanoid'], 2, '분야 고치기: 휴머노이드 로봇 (humanoid)']);
+    const full = category.apply({ body: fence({ action: 'set', category: { ...good, id: 'third' } }), list: added.list, max: 2 });
+    assert.deepEqual([full.ok, full.changed, full.list], [false, false, added.list]);
+    assert.match(full.comment, /반영하지 못했습니다: 분야는 2개까지/);
+    const removed = category.apply({ body: rmUrl.searchParams.get('body'), list: added.list, max: 3 });
+    assert.deepEqual([removed.changed, removed.list.map((c) => c.id), removed.commit.split('\n')[0]], [true, ['robotics'], '분야 지우기: 휴머노이드 (humanoid)']);
+    assert.deepEqual([category.apply({ body: rmUrl.searchParams.get('body'), list: before, max: 3 }).ok, category.apply({ body: '아무 말', list: before, max: 3 }).ok], [false, false]);
+    assert.equal(
+      category.format(added.list),
+      '[\n  {\n    "id": "robotics",\n    "label": "로보틱스",\n    "github": ["robot"],\n    "hf": { "tags": ["robotics"], "search": [] },\n    "hn": ["robot"]\n  },\n' +
+        '  {\n    "id": "humanoid",\n    "label": "휴머노이드",\n    "github": ["humanoid", "biped robot"],\n    "hf": { "tags": ["humanoid"], "search": ["humanoid", "biped robot"] },\n    "hn": ["humanoid", "biped robot"]\n  }\n]\n',
+    );
+    assert.deepEqual(JSON.parse(category.format(added.list)), added.list);
+    assert.equal(category.format([]), '[]\n');
+
+    // ── 목록 고치기와, 화면에 알려 줄 것 ──
+    assert.throws(() => categories.edit(before, { action: 'remove', id: 'nope' }), /목록에 없습니다/);
+    assert.equal(categories.edit(before, { action: 'set', category: before[0] }).did, 'same');
+    assert.deepEqual(categories.publicInfo({ categories: { list: before, max: 7 } }, 'someone/best'), { cats: before, catMax: 7, repo: 'someone/best' });
+    assert.deepEqual([categories.publicInfo({ categories: null }, 'someone/best'), 'repo' in categories.publicInfo({ categories: { list: before } }, 'bad repo'), categories.publicInfo({ categories: { list: before } }).catMax], [{}, false, 12]);
+
+    // ── 워크플로: 저장소 주인이 올린 "[분야]" 이슈만 처리하고, 본문은 환경 변수로만 넘긴다 ──
+    const wf = fs.readFileSync(path.join(root, '.github/workflows/category.yml'), 'utf8');
+    assert.match(wf, /if: github\.event\.issue\.author_association == 'OWNER' && startsWith\(github\.event\.issue\.title, '\[분야\]'\)/);
+    assert.match(wf, /^\s+ISSUE_BODY: \$\{\{ github\.event\.issue\.body \}\}$/m);
+    assert.equal((wf.match(/github\.event\.issue\.body/g) || []).length, 1); // 본문은 그 한 곳(환경 변수)에서만 꺼낸다: 명령 줄에 끼워 넣지 않는다
+    assert.match(wf, /gh workflow run pages\.yml/);
+    ok('화면에서 분야 더하기: 적는 규칙, 서버 쪽과 같은 규칙, 바로 검색(GitHub·Hacker News·Hugging Face)과 한도, 이슈 주소와 본문, categories.json 반영, 워크플로 조건');
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

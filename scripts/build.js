@@ -5,6 +5,7 @@
 //   GITHUB_TOKEN  있으면 검색 한도가 분당 30회.
 //   HF_TOKEN      Hugging Face 토큰(없어도 된다).
 //   BUDGET_SEC    수집에 쓸 시간 상한(초). 기본값은 config.js의 static.budget.
+//   GITHUB_REPOSITORY  "주인/저장소"(GitHub Actions가 넣어 준다). 있으면 화면에 "정식 분야로 등록"이 나온다.
 
 const path = require('node:path');
 const cfg = require('../config');
@@ -13,7 +14,7 @@ const { build } = require('../lib/build');
 const budget = Number(process.env.BUDGET_SEC) * 1000;
 const conf = budget > 0 ? { ...cfg, static: { ...cfg.static, budget } } : cfg;
 
-build({ cfg: conf, out: path.join(__dirname, '..', 'site'), seedUrl: process.env.SEED_URL || '' }).catch((err) => {
+build({ cfg: conf, out: path.join(__dirname, '..', 'site'), seedUrl: process.env.SEED_URL || '', repo: process.env.GITHUB_REPOSITORY || '' }).catch((err) => {
   console.error(`빌드 실패: ${err.message}`);
   process.exit(1);
 });
