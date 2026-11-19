@@ -1,68 +1,52 @@
-/* 밝고 단순한 순위표. 흰 바탕에 글자와 가는 선만 두고, 상자와 테두리는 꼭 필요한 곳에만 쓴다.
-   눈에 띄는 것은 둘뿐이다: 키 큰 압축체 순위 숫자와, 별의 노란색(상표, 고른 출처의 밑줄, 막대, 으뜸 단추).
-
-   고르는 것은 뜻에 따라 모양을 나눈다.
-     탭(밑줄)        어디를 볼지: 위쪽 띠의 출처, 그 안에서 오가는 것(모델 | Spaces | 데이터셋)
-     구획 단추        어떤 방식으로 볼지: 주간·월간·연간, 정렬 기준
-     알약 단추        무엇만 볼지: 분야, 모아 볼 곳
-
-   화면 모드: 처음에는 밝은 화면이고, 위쪽 띠의 단추로 어두운 화면을 고르면 <html data-theme="dark">가 된다. */
+/* Layout: 음원 차트처럼 읽는 순위표. 왼쪽에 키 큰 압축체 순위 숫자와 변동 표시가 달린 순위표가 길게 내려가고,
+   오른쪽 좁은 레일에 맥락용 차트 두 개와 수집 상태가 놓인다. 전부 왼쪽 정렬. */
+/* 화면 모드: 처음에는 어두운 화면이고(기기 설정이 밝아도), 위쪽 띠의 단추로 밝은 화면을 고르면 <html data-theme="light">가 된다. */
 :root {
-  color-scheme: light;
-  --page: #ffffff;
-  --surface: #ffffff; /* 떠 있는 것(말풍선, 안내, 카드) */
-  --raise: #ffffff; /* 구획 단추에서 고른 칸 */
-  --wash: #f3f5f8; /* 단추·입력란의 옅은 바탕 */
-  --wash-2: #e7ebf0;
-  --ink: #15181d;
-  --ink-2: #474e5b;
-  --muted: #667085;
-  --line: #e8ebf0;
-  --line-2: #d0d6df;
-  --star: #f6b100; /* 별의 노란색: 스타 수(크기)와 강조 */
-  --star-ink: #15181d; /* 노란 바탕 위의 글자 */
-  --star-wash: rgba(246, 177, 0, 0.2);
-  --count: #3b7df0; /* 개수(크기) */
-  --count-wash: rgba(59, 125, 240, 0.13);
-  --link: #1c5fd4;
-  --up: #0b7a34;
-  --down: #c8323c;
-  --ok: #14a44d;
-  --warn: #f5a300;
-  --notice-bg: #fff5d1;
-  --notice-ink: #5b4200;
-  --shadow: 0 1px 2px rgba(21, 24, 29, 0.06), 0 8px 24px rgba(21, 24, 29, 0.1);
-  --raise-shadow: 0 1px 2px rgba(21, 24, 29, 0.14);
-  --gutter: clamp(16px, 3.2vw, 40px);
+  color-scheme: dark;
+  --page: #0e1218;
+  --surface: #161b23;
+  --ink: #eef1f5;
+  --ink-2: #b9c2cf;
+  --muted: #8f99a9;
+  --line: #262d38;
+  --line-2: #3a4453;
+  --wash: rgba(238, 241, 245, 0.06);
+  --star: #c98500;
+  --star-wash: rgba(201, 133, 0, 0.24);
+  --count: #3987e5;
+  --count-wash: rgba(57, 135, 229, 0.2);
+  --link: #86b4ff;
+  --up: #4fcf4f;
+  --down: #f58080;
+  --notice-bg: #33280f;
+  --notice-ink: #f7dfa6;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
+  --ok: #0ca30c;
+  --warn: #fab219;
   --font-ui: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
   --font-num: "Big Shoulders Display", "Bahnschrift", "Arial Narrow", sans-serif;
 }
 
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #101216;
-  --surface: #181b21;
-  --raise: #353b47;
-  --wash: #1c2027;
-  --wash-2: #282d37;
-  --ink: #f2f4f7;
-  --ink-2: #bfc6d1;
-  --muted: #8e97a6;
-  --line: #23272f;
-  --line-2: #3a414d;
-  --star: #f4b320;
-  --star-wash: rgba(244, 179, 32, 0.22);
-  --count: #4b8cf5;
-  --count-wash: rgba(75, 140, 245, 0.2);
-  --link: #8ab6ff;
-  --up: #4fcf6f;
-  --down: #f58585;
-  --ok: #2fbf62;
-  --warn: #f5b021;
-  --notice-bg: #33290f;
-  --notice-ink: #f6dfa4;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.5);
-  --raise-shadow: none;
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #eef1f5;
+  --surface: #fbfcfd;
+  --ink: #131a24;
+  --ink-2: #465163;
+  --muted: #5f6b7c;
+  --line: #dde2ea;
+  --line-2: #c4ccd8;
+  --wash: rgba(19, 26, 36, 0.05);
+  --star: #e6a100; /* 스타 수(크기) */
+  --star-wash: rgba(230, 161, 0, 0.2);
+  --count: #2a78d6; /* 저장소 개수(크기) */
+  --count-wash: rgba(42, 120, 214, 0.16);
+  --link: #1b57c2;
+  --up: #0b6b0b;
+  --down: #b92f2f;
+  --notice-bg: #fff3d3;
+  --notice-ink: #5c3b00;
+  --shadow: 0 1px 2px rgba(19, 26, 36, 0.08), 0 10px 28px rgba(19, 26, 36, 0.1);
 }
 
 *,
@@ -133,13 +117,12 @@ a {
 }
 
 .wrap {
-  max-width: 1240px;
+  max-width: 1280px;
   margin-inline: auto;
-  padding-inline: var(--gutter);
+  padding-inline: clamp(16px, 3.2vw, 44px);
 }
 
-/* ── 위쪽 띠 ──────────────────────────────────────────── */
-/* 상표, 출처 탭, 수집 상태, 단추 둘. 좁은 화면(1020px 이하)에서는 출처 탭이 둘째 줄로 내려간다. */
+/* ── 머리 ─────────────────────────────────────────────── */
 .top {
   border-bottom: 1px solid var(--line);
 }
@@ -148,19 +131,19 @@ a {
   position: relative; /* 홈 화면 추가 안내(.install-help)가 이 아래에 뜬다 */
   display: flex;
   align-items: center;
-  gap: 0 10px;
-  min-height: 60px;
+  gap: 16px;
+  min-height: 56px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex: none;
-  margin-right: 10px;
-  font-size: 18px;
+  margin-right: auto;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
@@ -168,56 +151,16 @@ a {
   fill: var(--star);
 }
 
-/* 출처 탭: 고른 것은 글자가 진해지고 별색 밑줄이 띠의 아랫선 위에 놓인다 */
-.sources {
-  display: flex;
-  align-self: stretch;
-  min-width: 0;
-}
-
-.sources button {
-  position: relative;
-  flex: none;
-  padding: 0 12px;
-  border: 0;
-  background: none;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.sources button:hover {
-  color: var(--ink);
-}
-
-.sources button[aria-pressed="true"] {
-  color: var(--ink);
-}
-
-.sources button[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  inset: auto 12px -1px;
-  height: 3px;
-  border-radius: 3px 3px 0 0;
-  background: var(--star);
-}
-
 .live {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  margin-left: auto;
-  margin-right: 4px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
 
 .live-dot {
-  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -240,39 +183,30 @@ a {
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(20, 164, 77, 0.5);
+    box-shadow: 0 0 0 0 rgba(12, 163, 12, 0.5);
   }
   70%,
   100% {
-    box-shadow: 0 0 0 7px rgba(20, 164, 77, 0);
+    box-shadow: 0 0 0 7px rgba(12, 163, 12, 0);
   }
 }
 
 .icon-btn {
   display: grid;
   place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--ink-2);
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.icon-btn svg {
+  fill: var(--ink-2);
 }
 
 .icon-btn:hover {
   background: var(--wash);
-  color: var(--ink);
-}
-
-/* 화면 모드 단추: 누르면 바뀔 쪽의 그림만 보인다(밝은 화면에서는 달, 어두운 화면에서는 해) */
-.theme-btn .to-light,
-:root[data-theme="dark"] .theme-btn .to-dark {
-  display: none;
-}
-
-:root[data-theme="dark"] .theme-btn .to-light {
-  display: block;
 }
 
 /* 홈 화면에 추가: 넓은 화면에서는 글자까지, 좁은 화면(700px 이하)에서는 그림만 보인다 */
@@ -281,32 +215,31 @@ a {
   align-items: center;
   gap: 6px;
   flex: none;
-  height: 36px;
-  padding: 0 12px 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--wash);
+  height: 34px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
   color: var(--ink-2);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .install-btn:hover {
-  background: var(--wash-2);
-  color: var(--ink);
+  background: var(--wash);
 }
 
 /* 휴대폰에서 단추를 누르면 그 아래에 뜨는 안내(브라우저 메뉴로 추가하는 방법) */
 .install-help {
   position: absolute;
   z-index: 15;
-  top: 54px;
-  right: var(--gutter);
-  width: min(310px, calc(100% - 2 * var(--gutter)));
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  top: calc(100% - 4px);
+  right: clamp(16px, 3.2vw, 44px);
+  width: min(310px, calc(100% - 2 * clamp(16px, 3.2vw, 44px)));
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
   font-size: 13px;
@@ -321,44 +254,67 @@ a {
   white-space: nowrap; /* "홈 화면에 추가"가 줄 사이에서 갈리지 않게 */
 }
 
-/* ── 기간 고르기 ──────────────────────────────────────── */
-/* 위에서부터: (출처 안의 탭 / 모아 볼 곳) → 주간·월간·연간 → 기간(이 화면의 제목) → 설명 → 분야 */
+/* ── 기간 선택 ────────────────────────────────────────── */
 .hero {
   display: grid;
-  justify-items: start;
-  gap: 12px;
-  padding-block: 26px 18px;
+  gap: 10px;
+  padding-block: 28px 22px;
 }
 
-.hero > * {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.scope {
+/* 출처 탭과, 그 탭 안에서 오가는 단추(Hugging Face: 모델 | Spaces | 데이터셋)를 한 줄에 둔다 */
+.source-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
-  margin-bottom: 4px;
+  gap: 8px 14px;
+  margin-bottom: 8px;
 }
 
-.scope:not(:has(> :not([hidden]))) {
-  display: none; /* 둘 다 숨었으면 자리도 차지하지 않는다 */
+.source-row:not(:has(> :not([hidden]))) {
+  display: none; /* 둘 다 숨었으면(출처가 GitHub 하나뿐) 자리도 차지하지 않는다 */
 }
 
-/* 출처 안에서 오가는 탭(Hugging Face: 모델 | Spaces | 데이터셋): 위쪽 띠의 탭보다 가볍게, 밑줄만 */
+/* 출처 탭(GitHub | Hugging Face | …): 그 아래 주간·월간·연간과 헷갈리지 않게 알약 모양으로 둔다 */
+.sources {
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.sources button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.sources button:hover {
+  color: var(--ink);
+}
+
+.sources button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* 탭 안에서 오가는 단추: 출처 탭보다 가볍게, 고른 것만 테두리를 두른다 */
 .subs {
   display: flex;
-  gap: 20px;
+  gap: 2px;
 }
 
 .subs button {
-  padding: 2px 0 5px;
-  border: 0;
-  border-bottom: 2px solid transparent;
+  padding: 4px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: none;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
@@ -369,337 +325,95 @@ a {
 }
 
 .subs button[aria-pressed="true"] {
-  border-bottom-color: var(--ink);
-  color: var(--ink);
-}
-
-/* 알약 단추: 분야와, 모아 볼 곳. 고른 것만 채운다. */
-.picks,
-.cats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.picks button,
-.cats button {
-  padding: 5px 13px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--wash);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-
-.picks button:hover,
-.cats button:hover {
-  background: var(--wash-2);
-  color: var(--ink);
-}
-
-/* 모아 볼 곳은 여럿을 켜고 끄는 것이라 체크 상자를 앞에 둔다 */
-.picks button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding-left: 10px;
-  color: var(--muted);
-}
-
-.picks button::before {
-  content: "";
-  display: grid;
-  place-items: center;
-  width: 15px;
-  height: 15px;
-  border: 1.5px solid var(--line-2);
-  border-radius: 5px;
-  background: var(--page);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.picks button[aria-pressed="true"] {
-  color: var(--ink);
-}
-
-.picks button[aria-pressed="true"]::before {
-  content: "✓";
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--page);
-}
-
-.cats {
-  margin-top: 6px;
-}
-
-.cats-label {
-  margin-right: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.cats button[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--page);
-  font-weight: 600;
-}
-
-/* 내 분야(이 브라우저에만 있는 것): 채우지 않고 점선을 두른다. 고르면 채우고 바깥에 고리를 하나 더 둔다. */
-.cats button[data-mine] {
-  background: none;
-  box-shadow: inset 0 0 0 1px var(--line-2);
-  outline: 1px dashed var(--muted);
-  outline-offset: -1px;
-}
-
-.cats button[data-mine]:hover {
-  background: var(--wash);
-}
-
-.cats button[data-mine][aria-pressed="true"] {
-  background: var(--ink);
-  box-shadow: 0 0 0 2px var(--page), 0 0 0 3px var(--ink);
-  outline: 0;
-}
-
-.cats button[data-mine]:focus-visible {
-  outline: 2px solid var(--link);
-  outline-offset: 2px;
-}
-
-/* 고치기 · + 분야 추가: 고르는 것이 아니라 하는 일이라 글자만 둔다 */
-.cats .cat-tool {
-  padding-inline: 9px;
-  background: none;
-  color: var(--link);
-  font-weight: 600;
-}
-
-.cats .cat-tool:hover {
-  background: var(--wash);
-  color: var(--link);
-}
-
-/* 바로 검색으로 보고 있는 분야의 안내 한 줄과 "정식 분야로 등록" */
-.cat-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  justify-self: stretch;
-  padding: 10px 12px 10px 16px;
-  border-radius: 14px;
-  background: var(--wash);
-  color: var(--ink-2);
-  font-size: 13.5px;
-}
-
-.cat-bar b {
-  color: var(--ink);
-}
-
-.cat-bar-words {
-  color: var(--muted);
-}
-
-.cat-bar-btns {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.cat-bar .btn:not(.btn-go) {
-  background: var(--page);
-}
-
-.cat-bar-note {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* 분야 더하기·고치기 */
-.cat-form {
-  display: grid;
-  gap: 12px;
-  justify-self: stretch;
-  max-width: 760px;
-  padding: 18px 20px 20px;
-  border: 1px solid var(--line-2);
-  border-radius: 16px;
+  border-color: var(--line-2);
   background: var(--surface);
-}
-
-.cat-form h2 {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.cat-form-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 12px;
-}
-
-.cat-more .cat-form-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-block: 12px 8px;
-}
-
-.cat-field {
-  display: grid;
-  gap: 5px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-.cat-field input {
-  width: 100%;
-  height: 40px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--wash);
-  font-size: 15px;
-  font-weight: 400;
   color: var(--ink);
 }
 
-.cat-field input::placeholder {
-  color: var(--muted);
-  opacity: 0.75;
-}
-
-.cat-field input:disabled {
-  opacity: 0.45;
-}
-
-.cat-form .hint {
-  margin: 0;
-}
-
-.cat-more summary {
-  width: fit-content;
-  color: var(--link);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cat-form-msg {
-  color: var(--down);
-  font-size: 13.5px;
-  font-weight: 500;
-}
-
-.cat-form-msg:empty {
-  display: none;
-}
-
-.cat-form-btns {
+.types {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.cat-form-btns .btn-quiet {
-  margin-left: auto;
-}
-
-/* 구획 단추: 주간·월간·연간, 정렬 기준. 옅은 바탕 위에서 고른 칸만 떠오른다. */
-.types,
-.seg {
-  display: flex;
-  flex-wrap: wrap; /* 글꼴이 넓어 한 줄에 다 못 담는 화면에서는 가로로 넘치는 대신 줄을 바꾼다 */
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--wash);
-}
-
-.types button,
-.seg button {
-  border: 0;
-  border-radius: 9px;
-  background: none;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
+  gap: 22px;
 }
 
 .types button {
-  padding: 5px 15px;
-  font-size: 14px;
+  padding: 4px 0 6px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
-.seg button {
-  /* 단추가 넷(GitHub의 포크순, Hugging Face의 다운로드순, Hacker News의 댓글순)이어도 320px 화면에 한 줄로 담기게 좁힌다: 320px에서 5px, 413px부터 12px */
-  padding: 5px clamp(5px, 7.5vw - 19px, 12px);
-  font-size: 13.5px;
-}
-
-.types button:hover,
-.seg button:hover {
+.types button:hover {
   color: var(--ink);
 }
 
-.types button[aria-pressed="true"],
-.seg button[aria-pressed="true"] {
-  background: var(--raise);
-  box-shadow: var(--raise-shadow);
+.types button[aria-pressed="true"] {
   color: var(--ink);
+  border-bottom-color: var(--ink);
 }
 
-/* 기간: 이 화면의 제목. 글자를 눌러 고르고, 옆의 둥근 화살표로 앞뒤로 간다. */
 .period {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-left: -8px;
+}
+
+.step {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
+}
+
+.step:hover:not(:disabled) {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.step:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .period-pick {
   position: relative;
   min-width: 0;
-  margin: 0 4px 0 -8px;
 }
 
 .period-pick::after {
   content: "";
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  margin-top: -7px;
-  border-right: 2.5px solid var(--muted);
-  border-bottom: 2.5px solid var(--muted);
+  width: 10px;
+  height: 10px;
+  margin-top: -8px;
+  border-right: 2.5px solid var(--ink-2);
+  border-bottom: 2.5px solid var(--ink-2);
   transform: rotate(45deg);
   pointer-events: none;
 }
 
 .period-pick select {
   max-width: 100%;
-  padding: 0 34px 2px 8px;
+  padding: 0 34px 2px 4px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   appearance: none;
   field-sizing: content; /* 고른 항목 길이에 맞춘다(미지원 브라우저는 가장 긴 항목 폭) */
-  font-size: clamp(28px, 4.4vw, 38px);
+  font-size: clamp(30px, 5.2vw, 46px);
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   cursor: pointer;
 }
 
@@ -715,32 +429,9 @@ a {
   color: var(--ink);
 }
 
-.step {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--wash);
-  color: var(--ink-2);
-}
-
-.step:hover:not(:disabled) {
-  background: var(--wash-2);
-  color: var(--ink);
-}
-
-.step:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
 .period-sub {
-  max-width: 80ch;
+  max-width: 88ch;
   color: var(--ink-2);
-  font-size: 14.5px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -750,7 +441,37 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 12px;
-  padding-block: 6px 14px;
+  padding-bottom: 16px;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap; /* 글꼴이 넓어 한 줄에 다 못 담는 화면에서는 가로로 넘치는 대신 줄을 바꾼다 */
+  padding: 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.seg button {
+  /* 단추가 넷(GitHub의 포크순, Hugging Face의 다운로드순, Hacker News의 댓글순)이어도 320px 화면에 한 줄로 담기게 좁힌다: 320px에서 5px, 413px부터 12px */
+  padding: 4px clamp(5px, 7.5vw - 19px, 12px);
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.seg button:hover {
+  color: var(--ink);
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
 }
 
 .field {
@@ -762,27 +483,26 @@ a {
 
 .field-label {
   font-size: 13.5px;
-  color: var(--muted);
+  color: var(--ink-2);
 }
 
 .field select,
 .field input {
-  height: 36px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--wash);
-  font-size: 14px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13.5px;
 }
 
 .field select {
   max-width: 190px;
-  cursor: pointer;
 }
 
 .field-grow {
   flex: 1 1 200px;
-  max-width: 300px;
+  max-width: 320px;
 }
 
 .field-grow input {
@@ -797,7 +517,7 @@ a {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 36px;
+  min-height: 34px;
   font-size: 13.5px;
   color: var(--ink-2);
   white-space: nowrap;
@@ -825,31 +545,163 @@ a {
 .count {
   margin-left: auto;
   font-size: 13.5px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 분야 더하기·고치기 ────────────────────────────────── */
+/* 분야 고르기 칸에서 "+ 분야 추가…"를 골랐을 때만 도구 막대와 순위표 사이에 나타난다. */
+.cat-form {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-bottom: 16px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.cat-form h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cat-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+
+.cat-more .cat-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-block: 12px 8px;
+}
+
+.cat-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.cat-field input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--page);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.cat-field input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.cat-field input:disabled {
+  opacity: 0.45;
+}
+
+.cat-form .hint {
+  margin: 0;
+}
+
+.cat-more summary {
+  width: fit-content;
+  color: var(--link);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cat-form-msg {
+  color: var(--down);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.cat-form-msg:empty {
+  display: none;
+}
+
+.cat-form-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-form-btns .btn-quiet {
+  margin-left: auto;
 }
 
 /* ── 본문 배치 ────────────────────────────────────────── */
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 52px;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 40px;
   align-items: start;
 }
 
 /* ── 순위표 ───────────────────────────────────────────── */
-/* 상자 없이 바탕 위에 바로 놓고, 줄 사이에 가는 선만 둔다. */
 .board {
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .notice {
-  margin-bottom: 8px;
-  padding: 10px 14px;
-  border-radius: 12px;
+  display: flex;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 13px 13px 0 0;
   background: var(--notice-bg);
   color: var(--notice-ink);
   font-size: 13.5px;
+}
+
+/* 내 분야(이 브라우저가 바로 검색해 보여 주는 분야)를 볼 때만 순위표 맨 위에 붙는 한 줄: 무엇을 보고 있는지와 "정식 분야로 등록" */
+.cat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 9px 12px 9px 18px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 13px 13px 0 0;
+  background: var(--wash);
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.cat-bar b {
+  color: var(--ink);
+}
+
+.cat-bar-words {
+  color: var(--muted);
+}
+
+.cat-bar-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-bar-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cat-bar:not([hidden]) + .notice,
+.cat-bar:not([hidden]) ~ .cols {
+  border-radius: 0;
 }
 
 .cols,
@@ -858,7 +710,7 @@ a {
   grid-template-columns: 88px 36px minmax(0, 1fr) minmax(150px, 28%) 76px;
   column-gap: 14px;
   align-items: center;
-  padding-inline: 10px;
+  padding-inline: 18px;
 }
 
 .cols {
@@ -866,10 +718,15 @@ a {
   top: 0;
   z-index: 2;
   padding-block: 9px;
-  border-bottom: 1px solid var(--line-2);
-  background: var(--page);
+  border-bottom: 1px solid var(--line);
+  border-radius: 13px 13px 0 0;
+  background: var(--surface);
   font-size: 12.5px;
   color: var(--muted);
+}
+
+.notice:not([hidden]) + .cols {
+  border-radius: 0;
 }
 
 .cols-stars,
@@ -878,8 +735,13 @@ a {
 }
 
 .row {
-  padding-block: 12px;
+  padding-block: 11px;
   border-bottom: 1px solid var(--line);
+}
+
+.row:last-child {
+  border-bottom: 0;
+  border-radius: 0 0 13px 13px;
 }
 
 .row:hover {
@@ -895,7 +757,7 @@ a {
 
 .rank-num {
   font: 800 32px/1 var(--font-num);
-  color: var(--muted);
+  color: var(--ink-2);
   text-align: right;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
@@ -927,7 +789,7 @@ a {
 
 .move-new {
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: 4px;
   background: var(--count-wash);
   color: var(--link);
   font-size: 10.5px;
@@ -937,7 +799,7 @@ a {
 .avatar {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--wash);
 }
 
@@ -969,7 +831,7 @@ a {
 }
 
 .owner {
-  color: var(--muted);
+  color: var(--ink-2);
 }
 
 .repo-name {
@@ -1035,7 +897,7 @@ a {
 
 .flag {
   padding: 0 6px;
-  border-radius: 5px;
+  border-radius: 4px;
   background: var(--notice-bg);
   color: var(--notice-ink);
   font-size: 11.5px;
@@ -1066,8 +928,8 @@ a {
 .bar i {
   display: block;
   height: 100%;
-  min-width: 3px;
-  border-radius: 999px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
   background: var(--star);
 }
 
@@ -1131,7 +993,7 @@ a {
 }
 
 .empty {
-  padding: 64px 24px;
+  padding: 56px 24px;
   text-align: center;
   color: var(--ink-2);
 }
@@ -1140,11 +1002,11 @@ a {
   display: block;
   margin-bottom: 4px;
   color: var(--ink);
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .empty .btn {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .empty.late {
@@ -1157,189 +1019,13 @@ a {
   }
 }
 
-/* ── 모아 보기 ────────────────────────────────────────── */
-/* 출처마다 카드 하나씩, 같은 기간·같은 분야의 상위 몇 개를 나란히 둔다. 순위표용 도구와 오른쪽 레일은 쓰지 않는다. */
-:root[data-src="mix"] .toolbar,
-:root[data-src="mix"] .layout {
-  display: none;
-}
-
-.multi {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
-  gap: 16px;
-  align-items: start;
-  padding-top: 6px;
-}
-
-/* 카드는 여럿을 나란히 구별해야 해서, 이 화면에서 유일하게 테두리를 두른다 */
-.card {
-  min-width: 0;
-  overflow: hidden; /* 줄에 마우스를 올렸을 때의 바탕이 둥근 모서리를 넘지 않게 */
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--surface);
-}
-
-.card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 14px 16px 11px;
-  border-bottom: 1px solid var(--line);
-}
-
-.card-head h2 {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.card-head h2 a {
-  text-decoration: none;
-}
-
-.card-head h2 a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.card-head h2 span {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.card-unit {
-  flex: none;
-  color: var(--muted);
-  font-size: 12.5px;
-}
-
-/* 이 카드는 사이트가 받아 둔 것이 아니라 브라우저가 바로 검색한 것 */
-.card-live {
-  margin-right: 8px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--count-wash);
-  color: var(--link);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.mini {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  column-gap: 12px;
-  align-items: center;
-  padding: 9px 16px 9px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.mini:hover {
-  background: var(--wash);
-}
-
-.mini-rank {
-  font: 800 24px/1 var(--font-num);
-  color: var(--muted);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.mini[data-top] .mini-rank {
-  font-size: 30px;
-  color: var(--ink);
-}
-
-.mini-main {
-  min-width: 0;
-}
-
-.mini .name {
-  font-size: 14.5px;
-}
-
-/* 글 제목(Hacker News)은 문장이라 두 줄까지 보여 준다(순위표와 같다) */
-.card[data-src="hn"] .name {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  white-space: normal;
-}
-
-.mini-note {
-  display: flex;
-  gap: 0 10px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12.5px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.mini-note > * {
-  flex: none;
-}
-
-.mini-note .mini-desc {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.mini-score {
-  font-size: 14.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.card-more {
-  display: block;
-  padding: 10px 16px 12px;
-  color: var(--link);
-  font-size: 13.5px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.card-more:hover {
-  background: var(--wash);
-}
-
-.card-msg {
-  padding: 32px 16px;
-  color: var(--ink-2);
-  font-size: 13.5px;
-  text-align: center;
-}
-
-.multi-msg {
-  grid-column: 1 / -1;
-  padding: 64px 24px;
-  color: var(--ink-2);
-  text-align: center;
-}
-
-.multi-msg strong {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--ink);
-  font-size: 17px;
-}
-
-.multi-msg .btn {
-  margin-top: 16px;
-}
-
 /* ── 오른쪽 레일 ──────────────────────────────────────── */
 /* 화면이 낮아 레일이 다 안 들어가면 레일 안에서 따로 스크롤한다(안 그러면 아래쪽 패널에 닿을 수 없다). */
 .rail {
   position: sticky;
   top: 16px;
   display: grid;
-  gap: 32px;
+  gap: 30px;
   min-width: 0;
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
@@ -1374,7 +1060,7 @@ a {
   padding: 4px 6px;
   margin-inline: -6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   text-align: left;
   font-size: 13px;
@@ -1407,14 +1093,14 @@ button.lang-row:hover {
 
 .lang-bar {
   display: block;
-  height: 8px;
+  height: 10px;
 }
 
 .lang-bar i {
   display: block;
   height: 100%;
-  min-width: 3px;
-  border-radius: 999px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
   background: var(--count);
 }
 
@@ -1484,25 +1170,23 @@ button.lang-row:hover {
   margin-top: 12px;
 }
 
-/* ── 단추 ─────────────────────────────────────────────── */
 .btn {
-  display: inline-flex;
+  display: inline-flex; /* 링크로 된 단추(정식 분야로 등록)도 같은 모양이 되게 */
   align-items: center;
   justify-content: center;
-  height: 36px;
+  height: 34px;
   padding: 0 14px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--wash);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13.5px;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--wash-2);
+  border-color: var(--ink-2);
 }
 
 .btn:disabled {
@@ -1510,24 +1194,22 @@ button.lang-row:hover {
   cursor: default;
 }
 
-/* 으뜸 단추(바로 보기, 정식 분야로 등록): 별색 */
+/* 으뜸 단추(바로 보기, 정식 분야로 등록): 고른 탭과 같은 검은 바탕 */
 .btn-go {
-  background: var(--star);
-  color: var(--star-ink);
-}
-
-.btn-go:hover:not(:disabled) {
-  background: var(--star);
-  filter: brightness(0.94);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
 }
 
 /* 지우기처럼 드물게 누르는 것: 글자만 */
 .btn-quiet {
+  border-color: transparent;
   background: none;
   color: var(--muted);
 }
 
 .btn-quiet:hover:not(:disabled) {
+  border-color: transparent;
   background: var(--wash);
   color: var(--down);
 }
@@ -1540,15 +1222,10 @@ button.lang-row:hover {
 .foot {
   display: grid;
   gap: 4px;
-  margin-top: 44px;
-  padding-block: 22px 48px;
-  border-top: 1px solid var(--line);
+  max-width: 80ch;
+  padding-block: 28px 44px;
   color: var(--muted);
   font-size: 12.5px;
-}
-
-.foot p {
-  max-width: 84ch;
 }
 
 /* ── 말풍선 ───────────────────────────────────────────── */
@@ -1556,9 +1233,9 @@ button.lang-row:hover {
   position: fixed;
   z-index: 20;
   max-width: 280px;
-  padding: 8px 11px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--ink);
@@ -1571,54 +1248,9 @@ button.lang-row:hover {
 
 /* ── 좁은 화면 ────────────────────────────────────────── */
 @media (max-width: 1020px) {
-  /* 위쪽 띠가 두 줄이 된다: 첫 줄에 상표·상태·단추, 둘째 줄에 출처 탭(넘치면 옆으로 민다) */
-  .top-in {
-    flex-wrap: wrap;
-    min-height: 0;
-  }
-
-  .brand {
-    min-height: 52px;
-  }
-
-  /* 상태 문구는 첫 줄에 남는 자리만 차지한다(자리가 모자라면 문구가 줄고, 단추가 다음 줄로 밀리지 않는다) */
-  .live {
-    flex: 1 1 0;
-    justify-content: flex-end;
-  }
-
-  .live #liveText {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sources {
-    order: 9;
-    flex: 1 0 100%;
-    align-self: auto;
-    height: 42px;
-    margin-left: -10px; /* 첫 탭의 글자가 상표와 같은 줄에 서게 */
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .sources::-webkit-scrollbar {
-    display: none;
-  }
-
-  .sources button {
-    padding-inline: 10px;
-  }
-
-  .sources button[aria-pressed="true"]::after {
-    inset: auto 10px 0;
-  }
-
   .layout {
     grid-template-columns: minmax(0, 1fr);
-    gap: 36px;
+    gap: 32px;
   }
 
   .rail {
@@ -1632,55 +1264,86 @@ button.lang-row:hover {
 }
 
 @media (max-width: 700px) {
+  /* 제목(출처 이름)은 줄이지 않고, 상태 문구가 남는 자리만큼만 보이게 한다 */
+  .live {
+    min-width: 0;
+  }
+
+  .live-dot {
+    flex: none;
+  }
+
+  .live #liveText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 단추가 둘이 되면 상태 문구 자리가 모자라므로 사이를 좁혀 조금 돌려준다 */
   .top-in {
-    column-gap: 6px;
+    gap: 10px;
   }
 
   /* 홈 화면에 추가 단추는 그림만 남긴다(화면 모드 단추와 같은 크기) */
   .install-btn {
     justify-content: center;
-    width: 36px;
+    width: 34px;
     padding: 0;
-    background: none;
   }
 
   .install-btn span {
     display: none;
   }
 
-  .hero {
-    padding-block: 18px 14px;
+  /* 출처 탭이 여럿이라 가로를 꽉 채워 나누고, 그래도 모자라면 줄을 바꾼다 */
+  .sources {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
   }
 
-  .cat-form {
-    padding: 16px;
+  .sources button {
+    flex: 1 1 auto;
+    padding-inline: 8px;
+    font-size: 13px;
   }
 
-  .cat-form-grid,
-  .cat-more .cat-form-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* 고르는 칸을 좁혀 검색란과 한 줄에 둔다 */
-  .field select {
-    max-width: 132px;
-  }
-
-  .field-grow {
+  /* 고르기 칸(분야, 언어)은 한 줄을 나눠 쓴다: 분야 칸이 늘어도 조작부의 줄 수는 늘지 않게 */
+  .toolbar .field:not(.field-grow) {
     flex: 1 1 140px;
+  }
+
+  .toolbar .field:not(.field-grow) select {
+    flex: 1 1 0;
+    min-width: 0;
     max-width: none;
   }
 
   .count {
-    margin-left: auto;
+    margin-left: 0;
   }
 
   .cols {
     display: none;
   }
 
-  .rows {
-    border-top: 1px solid var(--line);
+  /* 순위표 맨 위에 안내 줄이 붙어 있으면 첫 줄의 모서리는 둥글리지 않는다 */
+  .cat-bar:not([hidden]) ~ .rows .row:first-child,
+  .notice:not([hidden]) ~ .rows .row:first-child {
+    border-radius: 0;
+  }
+
+  .cat-bar {
+    padding-inline: 12px;
+  }
+
+  .cat-form {
+    padding-inline: 14px;
+  }
+
+  .cat-form-grid,
+  .cat-more .cat-form-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .row {
@@ -1691,7 +1354,11 @@ button.lang-row:hover {
     column-gap: 10px;
     row-gap: 8px;
     align-items: start;
-    padding-inline: 2px;
+    padding-inline: 12px;
+  }
+
+  .row:first-child {
+    border-radius: 13px 13px 0 0;
   }
 
   .rank {

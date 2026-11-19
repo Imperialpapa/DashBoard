@@ -1740,12 +1740,16 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     assert.equal((await fetch(`${base}/api/refresh?src=gh_robotics&type=weekly&key=rolling`, { method: 'POST' })).status, 429); // 방금 받았으므로 쿨다운
     assert.equal((await fetch(`${base}/api/refresh?src=constructor&type=weekly&key=rolling`, { method: 'POST' })).status, 404);
     const pageHtml = await (await fetch(`${base}/`)).text();
-    assert.match(pageHtml, /<div class="cats" id="cats" role="group" aria-label="분야" hidden><\/div>/); // 분야 단추가 들어갈 자리
-    // 모아 보기(여러 출처를 한 화면에 나란히): 탭, 볼 곳을 고르는 단추, 카드가 들어갈 자리. 주소의 앞머리(mix)는 화면 코드가 안다.
-    assert.match(pageHtml, /<button type="button" data-src="mix" aria-pressed="false" hidden>모아 보기<\/button>/);
-    assert.match(pageHtml, /<div class="picks" id="picks" role="group" aria-label="모아 볼 곳" hidden><\/div>/);
-    assert.match(pageHtml, /<section class="multi" id="multi" aria-label="출처별 순위" hidden><\/section>/);
-    assert.match(await (await fetch(`${base}/app.js`)).text(), /SOURCES\.mix = \{/);
+    // 분야 고르기 칸: 정렬·언어와 같은 줄(도구 막대)에 있고, 분야가 있는 출처에서 화면 코드가 채워 보여 준다.
+    assert.match(pageHtml, /<div class="toolbar">[\s\S]*<label class="field" id="catField" hidden>\s*<span class="field-label">분야<\/span>\s*<select id="catSelect"><option value="">전체<\/option><\/select>\s*<\/label>\s*<label class="field">\s*<span class="field-label" id="facetLabel">/);
+    // 조작부 줄을 늘리던 분야 단추 줄과 모아 보기(탭, 볼 곳 단추, 카드 자리)는 두지 않는다.
+    assert.doesNotMatch(pageHtml, /id="cats"|data-src="mix"|id="picks"|id="multi"/);
+    const appJs = await (await fetch(`${base}/app.js`)).text();
+    assert.doesNotMatch(appJs, /SOURCES\.mix|isMix|loadMulti/);
+    assert.match(appJs, /<option value="\$\{CAT_ADD\}">\+ 분야 추가…<\/option>/); // 분야 추가는 고르기 칸의 맨 아래 항목이다
+    // 처음에는 어두운 화면이다(기기 설정을 따르지 않는다). 밝은 화면은 단추로 골랐을 때만.
+    assert.match(pageHtml, /document\.documentElement\.dataset\.theme = t === 'light' \? 'light' : 'dark';/);
+    assert.doesNotMatch(await (await fetch(`${base}/styles.css`)).text(), /prefers-color-scheme/);
     // 분야를 화면에서 더하기: 목록에 분야의 낱말과 상한이 실리고(등록할 저장소는 배포본에만 있다), 바로 검색하는 부분(live.js)을 내준다.
     assert.deepEqual([liveMeta.cats.map((c) => c.id), liveMeta.cats[0].hf, liveMeta.catMax, liveMeta.repo], [['robotics', 'agents'], { tags: ['robotics'], search: ['robot'] }, 12, undefined]);
     const liveJs = await fetch(`${base}/live.js`);
