@@ -58,5 +58,60 @@ jobs:
         with:
           path: site
 
+      # 올린 사이트 묶음이 목록에 보일 때까지 기다렸다가 배포한다.
+      # 배포 단계(deploy-pages)는 이 실행의 묶음 목록에서 "github-pages"를 찾는데, 올린 직후에는 목록에 아직 안 보일 때가 있어
+      # "No artifacts named github-pages were found"로 실패했다(2026-11-20, 잇달아 두 번).
+      # 그래서 배포 단계가 묻는 것과 같은 목록을 2초마다 물어, 잇달아 두 번 하나로 보이면 넘어간다(길어야 2분).
+      # 이 단계 때문에 배포가 막히지는 않게 한다: 목록을 묻지 못하면(GitHub 안쪽 주소가 바뀌는 등) 10초만 쉬고,
+      # 2분이 지나도 안 보이면 그대로 배포를 시도한다.
+      - name: Wait until the uploaded site is listed
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const NAME = 'github-pages';
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            // deploy-pages가 쓰는 것과 같은 조회(@actions/artifact의 listArtifacts): 이 실행에 올라온 묶음의 목록
+            async function count() {
+              const token = process.env.ACTIONS_RUNTIME_TOKEN;
+              const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+              const scope = claims.scp.split(' ').find((s) => s.startsWith('Actions.Results:'));
+              const [, workflowRunBackendId, workflowJobRunBackendId] = scope.split(':');
+              const url = new URL('/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts', process.env.ACTIONS_RESULTS_URL);
+              const res = await fetch(url, {
+                method: 'POST',
+                headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+                body: JSON.stringify({ workflowRunBackendId, workflowJobRunBackendId }),
+              });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return ((await res.json()).artifacts || []).filter((a) => a.name === NAME).length;
+            }
+            let seen = 0;
+            let failed = 0;
+            for (let i = 1; i <= 60; i += 1) {
+              let n;
+              try {
+                n = await count();
+              } catch (err) {
+                failed += 1;
+                if (failed >= 3) {
+                  core.warning(`묶음 목록을 묻지 못했습니다(${err.message}). 10초 쉬고 배포로 넘어갑니다.`);
+                  await sleep(10_000);
+                  return;
+                }
+              }
+              if (n > 1) {
+                // 실패한 실행을 "Re-run"하면 앞 시도가 올린 묶음이 남아 둘이 되고, 배포 단계가 받아 주지 않는다.
+                core.setFailed(`"${NAME}" 묶음이 이 실행에 ${n}개 있습니다. "Re-run" 대신 Actions 탭의 "Run workflow"로 새로 실행하세요.`);
+                return;
+              }
+              seen = n === 1 ? seen + 1 : 0;
+              if (seen >= 2) {
+                core.info(`"${NAME}" 묶음이 목록에 보입니다(${i}번째 확인).`);
+                return;
+              }
+              await sleep(2000);
+            }
+            core.warning(`2분을 기다려도 "${NAME}" 묶음이 목록에 보이지 않습니다. 그대로 배포를 시도합니다.`);
+
       - id: deploy
         uses: actions/deploy-pages@v5

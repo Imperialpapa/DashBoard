@@ -1294,6 +1294,8 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     }
     // 예약 실행(워크플로의 cron)은 config.js의 static.at과 같고, 잇단 두 회차 사이가 범위 안이다.
     const yml = fs.readFileSync(path.join(root, '.github/workflows/pages.yml'), 'utf8');
+    // 사이트 묶음을 올린 다음, 그 묶음이 목록에 보이기를 기다리는 단계를 거쳐 배포한다(올린 직후에는 목록에 안 보일 때가 있다).
+    assert.match(yml, /uses: actions\/upload-pages-artifact@v\d+[\s\S]*?- name: Wait until the uploaded site is listed\s+uses: actions\/github-script@v\d+[\s\S]*?- id: deploy\s+uses: actions\/deploy-pages@v\d+\s*$/);
     const crons = [...yml.matchAll(/^\s*- cron: '(\d+) ([\d,]+) \* \* \*'/gm)];
     assert.equal(crons.length, 1);
     const hours = crons[0][2].split(',').map(Number);
