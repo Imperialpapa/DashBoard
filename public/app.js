@@ -139,7 +139,7 @@
   const el = {
     live: $('#live'), liveText: $('#liveText'), themeBtn: $('#themeBtn'),
     installBtn: $('#installBtn'), installHelp: $('#installHelp'), themeColor: $('#themeColor'),
-    types: $('.types'), prev: $('#prevBtn'), next: $('#nextBtn'), period: $('#periodSelect'), sub: $('#periodSub'),
+    types: $('.types'), prev: $('#prevBtn'), next: $('#nextBtn'), period: $('#periodSelect'), sub: $('#periodSub'), pop: $('#periodPop'),
     seg: $('.seg'), lang: $('#langSelect'), search: $('#search'), count: $('#count'),
     notice: $('#notice'), cols: $('#cols'), gainHead: $('#gainHead'), rows: $('#rows'), empty: $('#empty'),
     langs: $('#langs'), hist: $('#hist'), status: $('#status'),
@@ -160,6 +160,7 @@
     cats: [], // 이 사이트에 등록된 분야: [{id, label}] (목록을 받아야 안다)
     mine: [], // 내 분야: 이 브라우저에 적어 둔 분야 [{id, label, github, hf: {tags, search}, hn}]. 그 순위는 브라우저가 바로 검색한다
     form: null, // 분야를 더하거나 고치는 입력란이 열려 있으면 {mode: 'add' | 'edit', id}
+    pop: false, // 기간 말풍선(기간 고르기와 그 설명)이 떠 있는지
     liveError: null, // 바로 검색하지 못했을 때: {message, retryAt}
     type: 'weekly',
     key: 'rolling',
@@ -784,10 +785,34 @@
     }
     el.cat.value = state.cat;
     renderCatBar();
+    // 종류 탭: 지금 보고 있는 것만 말풍선 모양 칩이 되어 고른 기간(App Store는 카테고리)까지 보여 준다("주간 · 최근 7일").
+    // 그 칩을 누르면 기간 말풍선이 뜬다. 나머지 탭은 이름만 둔다.
+    const chip = chipPeriod();
     for (const b of el.types.querySelectorAll('button')) {
-      b.setAttribute('aria-pressed', String(b.dataset.type === state.type));
+      const on = b.dataset.type === state.type;
+      b.setAttribute('aria-pressed', String(on));
+      if (on) b.setAttribute('aria-expanded', String(state.pop));
+      const chipSig = on ? `on|${chip}` : 'off';
+      if (b.dataset.sig === chipSig) continue;
+      b.dataset.sig = chipSig;
+      const name = (S().types.find(([t]) => t === b.dataset.type) || [])[1] || b.textContent;
+      if (on) {
+        b.innerHTML =
+          `<span class="type-name">${esc(name)}</span>` +
+          (chip ? `<span class="type-period">${esc(chip)}</span>` : '') +
+          '<svg class="type-caret" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        b.setAttribute('aria-controls', 'periodPop');
+        b.title = state.src === 'as' ? '눌러서 카테고리를 고르고 설명을 봅니다' : allTime() ? '눌러서 설명을 봅니다' : '눌러서 기간을 고르고 설명을 봅니다';
+      } else {
+        b.textContent = name;
+        b.removeAttribute('aria-expanded');
+        b.removeAttribute('aria-controls');
+        b.removeAttribute('title');
+      }
     }
+    placePop();
     const list = listing();
+    el.pop.classList.toggle('single', list.length <= 1); // 고를 것이 하나뿐이면(전체 기간) 말풍선에는 이름과 설명만 둔다
     const sig = `${scopeOf()}|${state.type}|${list.map((d) => `${d.key}:${d.kind}`).join(',')}|${state.key}`;
     if (el.period.dataset.sig !== sig) {
       el.period.dataset.sig = sig;
@@ -849,6 +874,39 @@
     catBarHtml = html;
     el.catBar.hidden = !html;
     el.catBar.innerHTML = html;
+  }
+
+  /**
+   * 고른 탭의 칩에 적는 기간(카테고리) 이름. 올해 것은 해를 떼어 짧게 적는다("2026년 46주차" → "46주차").
+   * 전체 기간은 탭 이름(최대 스타)이 곧 그것이라 적지 않는다.
+   */
+  function chipPeriod() {
+    if (allTime()) return '';
+    const d = currentDesc();
+    const label = d ? optionLabel(d) : keyLabel(state.key);
+    const year = `${new Date(now()).getUTCFullYear()}년 `;
+    return label.startsWith(year) ? label.slice(year.length) : label;
+  }
+
+  // 기간 말풍선: 기간을 고르는 칸과 그 기간의 설명. 고른 탭(칩)을 누르면 뜨고, 다시 누르거나 바깥을 누르거나 Esc를 누르면 닫힌다.
+  // 말풍선 안에서 기간을 바꾸는 동안에는 떠 있다(앞뒤 화살표로 여러 기간을 넘겨 볼 수 있게).
+  function setPop(on) {
+    state.pop = on;
+    el.pop.hidden = !on;
+    const b = el.types.querySelector('button[aria-pressed="true"]');
+    if (b) b.setAttribute('aria-expanded', String(on));
+    placePop();
+  }
+
+  /** 말풍선의 꼬리를 고른 탭의 가운데에 맞춘다. */
+  function placePop() {
+    if (!state.pop) return;
+    const b = el.types.querySelector('button[aria-pressed="true"]');
+    if (!b) return;
+    const box = el.pop.getBoundingClientRect();
+    const at = b.getBoundingClientRect();
+    const x = at.left + at.width / 2 - box.left;
+    el.pop.style.setProperty('--tail', `${Math.round(Math.min(Math.max(x, 20), box.width - 20))}px`);
   }
 
   function step(delta) {
@@ -1636,6 +1694,9 @@
   el.types.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-type]');
     if (!b) return;
+    // 지금 보고 있는 탭(칩)을 누르면 기간 말풍선이 뜬다(다시 누르면 닫힌다).
+    if (b.dataset.type === state.type) return void setPop(!state.pop);
+    setPop(false);
     // 기간 종류(주간·월간·연간)를 바꾸면 최근 구간으로(전체 기간은 하나뿐인 그 기간으로) 가고,
     // 차트 종류(무료·유료·매출)를 바꾸면 보던 카테고리를 유지한다.
     go(b.dataset.type, state.src === 'as' ? state.key : firstKey(state.src, b.dataset.type));
@@ -1786,9 +1847,11 @@
   // 안내는 바깥을 누르거나 Esc를 누르면 닫힌다.
   document.addEventListener('pointerdown', (e) => {
     if (!el.installHelp.hidden && !e.target.closest('#installHelp, #installBtn')) showHelp(false);
+    if (state.pop && !e.target.closest('#periodPop, .types')) setPop(false); // 기간 말풍선도 바깥을 누르면 닫힌다
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !el.installHelp.hidden) showHelp(false);
+    else if (e.key === 'Escape' && state.pop) setPop(false);
     else if (e.key === 'Escape' && state.form) closeCatForm();
   });
 
@@ -1823,10 +1886,14 @@
     histFrame = requestAnimationFrame(renderHist);
   }).observe(el.hist);
 
+  window.addEventListener('resize', placePop);
+
   window.addEventListener('hashchange', () => {
     const before = state.src;
     const beforeCat = state.cat;
+    const beforeType = state.type;
     readHash();
+    if (state.src !== before || state.type !== beforeType) setPop(false); // 다른 출처·종류로 가면 기간 말풍선은 닫는다
     if (state.src !== before || state.cat !== beforeCat) {
       // 출처가 바뀌면 낱말(스타/좋아요, 언어/작업)이 달라지므로, 이전 출처의 순위를 새 머리글 아래에 남겨 두지 않는다.
       // 분야가 바뀔 때도 마찬가지다(다른 분야의 순위를 새 분야 이름 아래에 두지 않는다). 다만 언어 같은 거르기는 그대로 둔다.

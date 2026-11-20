@@ -71,24 +71,30 @@
         </div>
         <div class="subs" id="subs" role="group" hidden></div>
       </div>
-      <div class="types" role="group" aria-label="집계 단위">
-        <button type="button" data-type="weekly" aria-pressed="true">주간</button>
-        <button type="button" data-type="monthly" aria-pressed="false">월간</button>
-        <button type="button" data-type="yearly" aria-pressed="false">연간</button>
-        <button type="button" data-type="all" aria-pressed="false">최대 스타</button>
-      </div>
-      <div class="period">
-        <button class="step" id="prevBtn" type="button" aria-label="이전 기간">
-          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M10.2 2.8 5 8l5.2 5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div class="period-pick">
-          <select id="periodSelect" aria-label="기간 선택"></select>
+      <!-- 종류 탭(주간·월간·연간 …). 지금 보고 있는 탭만 말풍선 모양 칩이 되어 고른 기간까지 보여 준다("주간 · 최근 7일").
+           그 칩을 누르면 아래의 말풍선이 떠서 기간을 고르고 그 기간의 설명을 본다(app.js). 순위표에 자리를 내주려고 늘 보이는 줄로 두지 않는다. -->
+      <div class="types-row">
+        <div class="types" role="group" aria-label="집계 단위">
+          <button type="button" data-type="weekly" aria-pressed="true">주간</button>
+          <button type="button" data-type="monthly" aria-pressed="false">월간</button>
+          <button type="button" data-type="yearly" aria-pressed="false">연간</button>
+          <button type="button" data-type="all" aria-pressed="false">최대 스타</button>
         </div>
-        <button class="step" id="nextBtn" type="button" aria-label="다음 기간">
-          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M5.8 2.8 11 8l-5.2 5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        <div class="period-pop" id="periodPop" role="group" aria-label="기간" hidden>
+          <div class="period">
+            <button class="step" id="prevBtn" type="button" aria-label="이전 기간">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.2 2.8 5 8l5.2 5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="period-pick">
+              <select id="periodSelect" aria-label="기간 선택"></select>
+            </div>
+            <button class="step" id="nextBtn" type="button" aria-label="다음 기간">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5.8 2.8 11 8l-5.2 5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <p class="period-sub" id="periodSub">&nbsp;</p>
+        </div>
       </div>
-      <p class="period-sub" id="periodSub">&nbsp;</p>
     </section>
 
     <div class="toolbar">

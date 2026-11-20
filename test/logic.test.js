@@ -1742,10 +1742,15 @@ const job = (c, type, key) => c.jobs.get(Store.id(type, key));
     const pageHtml = await (await fetch(`${base}/`)).text();
     // 분야 고르기 칸: 정렬·언어와 같은 줄(도구 막대)에 있고, 분야가 있는 출처에서 화면 코드가 채워 보여 준다.
     assert.match(pageHtml, /<div class="toolbar">[\s\S]*<label class="field" id="catField" hidden>\s*<span class="field-label">분야<\/span>\s*<select id="catSelect"><option value="">전체<\/option><\/select>\s*<\/label>\s*<label class="field">\s*<span class="field-label" id="facetLabel">/);
+    // 기간 이름과 기간 설명은 늘 보이는 줄이 아니라, 지금 보는 탭(칩)을 누르면 뜨는 말풍선 안에 있다(처음에는 숨겨 둔다).
+    assert.match(pageHtml, /<div class="types-row">\s*<div class="types" role="group"[^>]*>[\s\S]*?<\/div>\s*<div class="period-pop" id="periodPop" role="group" aria-label="기간" hidden>\s*<div class="period">[\s\S]*?<select id="periodSelect"[^>]*><\/select>[\s\S]*?<\/div>\s*<p class="period-sub" id="periodSub">&nbsp;<\/p>\s*<\/div>\s*<\/div>\s*<\/section>/);
     // 조작부 줄을 늘리던 분야 단추 줄과 모아 보기(탭, 볼 곳 단추, 카드 자리)는 두지 않는다.
     assert.doesNotMatch(pageHtml, /id="cats"|data-src="mix"|id="picks"|id="multi"/);
     const appJs = await (await fetch(`${base}/app.js`)).text();
     assert.doesNotMatch(appJs, /SOURCES\.mix|isMix|loadMulti/);
+    // 지금 보는 탭만 칩이 되어 고른 기간을 함께 적고("주간 · 최근 7일"), 그 탭을 다시 누르면 말풍선을 여닫는다.
+    assert.match(appJs, /<span class="type-name">\$\{esc\(name\)\}<\/span>/);
+    assert.match(appJs, /if \(b\.dataset\.type === state\.type\) return void setPop\(!state\.pop\);/);
     assert.match(appJs, /<option value="\$\{CAT_ADD\}">\+ 분야 추가…<\/option>/); // 분야 추가는 고르기 칸의 맨 아래 항목이다
     // 처음에는 어두운 화면이다(기기 설정을 따르지 않는다). 밝은 화면은 단추로 골랐을 때만.
     assert.match(pageHtml, /document\.documentElement\.dataset\.theme = t === 'light' \? 'light' : 'dark';/);

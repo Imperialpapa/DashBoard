@@ -1,5 +1,7 @@
 /* Layout: 음원 차트처럼 읽는 순위표. 왼쪽에 키 큰 압축체 순위 숫자와 변동 표시가 달린 순위표가 길게 내려가고,
-   오른쪽 좁은 레일에 맥락용 차트 두 개와 수집 상태가 놓인다. 전부 왼쪽 정렬. */
+   오른쪽 좁은 레일에 맥락용 차트 두 개와 수집 상태가 놓인다. 전부 왼쪽 정렬.
+   순위표가 첫 화면에 많이 보이도록 조작부는 줄을 아낀다: 기간 이름과 설명은 늘 보이는 줄이 아니라,
+   지금 보고 있는 탭(칩)을 눌렀을 때 뜨는 말풍선에 있다. */
 /* 화면 모드: 처음에는 어두운 화면이고(기기 설정이 밝아도), 위쪽 띠의 단추로 밝은 화면을 고르면 <html data-theme="light">가 된다. */
 :root {
   color-scheme: dark;
@@ -258,7 +260,7 @@ a {
 .hero {
   display: grid;
   gap: 10px;
-  padding-block: 28px 22px;
+  padding-block: 24px 18px;
 }
 
 /* 출처 탭과, 그 탭 안에서 오가는 단추(Hugging Face: 모델 | Spaces | 데이터셋)를 한 줄에 둔다 */
@@ -330,34 +332,112 @@ a {
   color: var(--ink);
 }
 
+/* 종류 탭(주간·월간·연간 …)과, 고른 탭을 누르면 그 아래에 뜨는 기간 말풍선 */
+.types-row {
+  position: relative; /* 말풍선(.period-pop)이 이 아래에 뜬다 */
+}
+
 .types {
   display: flex;
-  gap: 22px;
+  align-items: center;
+  gap: 4px 16px;
+  min-width: 0;
 }
 
 .types button {
-  padding: 4px 0 6px;
-  border: 0;
-  border-bottom: 3px solid transparent;
+  flex: none;
+  padding: 5px 2px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: none;
   font-size: 16px;
   font-weight: 600;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .types button:hover {
   color: var(--ink);
 }
 
+/* 지금 보고 있는 탭: 말풍선 모양 칩. 탭 이름 옆에 고른 기간을 적고, 누르면 말풍선이 뜬다는 표시(∨)를 둔다 */
 .types button[aria-pressed="true"] {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 10px 5px 13px;
+  border-color: var(--line-2);
+  background: var(--surface);
   color: var(--ink);
-  border-bottom-color: var(--ink);
+}
+
+.types button[aria-pressed="true"]:hover {
+  border-color: var(--ink-2);
+}
+
+.type-name {
+  flex: none;
+}
+
+.type-period {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.type-period::before {
+  content: "·";
+  margin-right: 7px;
+  color: var(--muted);
+}
+
+.type-caret {
+  flex: none;
+  color: var(--ink-2);
+  transition: transform 0.15s;
+}
+
+.types button[aria-expanded="true"] .type-caret {
+  transform: rotate(180deg);
+}
+
+/* 기간 말풍선: 기간을 고르는 칸(앞뒤 화살표)과 그 기간의 설명. 순위표 위에 떠서 자리를 차지하지 않는다 */
+.period-pop {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 11px);
+  left: 0;
+  width: min(400px, 100%);
+  padding: 10px 14px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* 꼬리: 고른 탭을 가리킨다(자리는 app.js가 --tail로 맞춘다) */
+.period-pop::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--tail, 44px);
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-top: 1px solid var(--line-2);
+  border-left: 1px solid var(--line-2);
+  background: var(--surface);
+  transform: rotate(45deg);
 }
 
 .period {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: -8px;
 }
 
@@ -365,8 +445,8 @@ a {
   display: grid;
   place-items: center;
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 8px;
   background: none;
@@ -391,29 +471,29 @@ a {
 .period-pick::after {
   content: "";
   position: absolute;
-  right: 8px;
+  right: 9px;
   top: 50%;
-  width: 10px;
-  height: 10px;
-  margin-top: -8px;
-  border-right: 2.5px solid var(--ink-2);
-  border-bottom: 2.5px solid var(--ink-2);
+  width: 8px;
+  height: 8px;
+  margin-top: -7px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
   transform: rotate(45deg);
   pointer-events: none;
 }
 
 .period-pick select {
   max-width: 100%;
-  padding: 0 34px 2px 4px;
+  padding: 2px 30px 3px 6px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   appearance: none;
   field-sizing: content; /* 고른 항목 길이에 맞춘다(미지원 브라우저는 가장 긴 항목 폭) */
-  font-size: clamp(30px, 5.2vw, 46px);
+  font-size: 22px;
   font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
   cursor: pointer;
 }
 
@@ -429,9 +509,25 @@ a {
   color: var(--ink);
 }
 
+/* 고를 것이 하나뿐이면(전체 기간) 화살표와 고르기 표시 없이 이름만 적는다 */
+.period-pop.single .step,
+.period-pop.single .period-pick::after {
+  display: none;
+}
+
+.period-pop.single .period {
+  margin-left: 0;
+}
+
+.period-pop.single .period-pick select {
+  padding-inline: 0;
+  pointer-events: none;
+}
+
 .period-sub {
-  max-width: 88ch;
+  margin-top: 6px;
   color: var(--ink-2);
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
 }
 
