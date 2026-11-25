@@ -33,5 +33,26 @@
     "github": ["tts", "speech", "voice", "asr"],
     "hf": { "tags": ["text-to-speech", "automatic-speech-recognition", "task_categories:text-to-speech", "task_categories:automatic-speech-recognition"], "search": ["tts"] },
     "hn": ["tts", "speech", "voice"]
+  },
+  {
+    "id": "claude-skills",
+    "label": "Claude 스킬",
+    "github": ["claude-skills", "claude-code-skills", "agent-skills", "claude-skill", "agent-skill"],
+    "hf": { "tags": [], "search": [] },
+    "hn": ["agent skills", "agent skill", "claude skills", "claude skill", "claude code skills", "claude code skill"]
+  },
+  {
+    "id": "claude-plugins",
+    "label": "Claude 플러그인·모드",
+    "github": ["claude-code-plugin", "claude-code-plugins", "claude-plugin", "claude-plugins", "claude-code-mods", "claude-mods"],
+    "hf": { "tags": [], "search": [] },
+    "hn": ["claude code plugin", "claude code plugins", "claude plugin", "claude plugins", "claude code mod", "claude mod"]
+  },
+  {
+    "id": "claude-hooks",
+    "label": "Claude 훅",
+    "github": ["claude-code-hooks", "claude-hooks"],
+    "hf": { "tags": [], "search": [] },
+    "hn": ["claude code hooks", "claude code hook", "claude hooks", "claude hook"]
   }
 ]
